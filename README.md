@@ -1,80 +1,95 @@
-# RotaLucro — MVP Android 0.3.1
+# RotaLucro 0.4.0
 
-Aplicativo Android para analisar ofertas exibidas no 99 Motorista.
+Aplicativo Android em Kotlin + Jetpack Compose para analisar ofertas exibidas no app 99 Motorista.
 
-## Correção desta versão
+A versão 0.4.0 foi redesenhada com navegação profissional, regras de R$/km por horário, simulador, custos da moto, diagnóstico da leitura e um novo box sobreposto à oferta.
 
-A versão anterior apontava para o Compose BOM `2026.04.00`, que não estava disponível nos repositórios do Android. Nesta versão a dependência foi corrigida para `2026.06.01`.
+## O que o aplicativo mostra no box
 
-## Classificação do box
+- Classificação: **RUIM**, **MÉDIA** ou **ÓTIMA**
+- Valor recebido por quilômetro
+- Valor recebido por hora
+- Lucro estimado
+- Valor total da oferta
+- Distância total, incluindo o deslocamento até o passageiro
+- Tempo total, incluindo o deslocamento até o passageiro
+- Faixa de R$/km ativa naquele horário
 
-A cor agora é definida pela faixa de valor por quilômetro que estiver ativa no horário da oferta:
+## Regra das cores
 
-- abaixo do mínimo: vermelho, corrida ruim;
-- entre o mínimo e o máximo/ótimo: amarelo, corrida média;
-- a partir do máximo/ótimo: verde, corrida ótima.
+Exemplo com mínimo de R$ 1,20/km e ótimo de R$ 1,80/km:
 
-O aplicativo continua mostrando o valor por hora, mas ele é apenas informativo e não muda a cor do box.
+- Abaixo de R$ 1,20/km: vermelho
+- De R$ 1,20 até menos de R$ 1,80/km: amarelo
+- A partir de R$ 1,80/km: verde
 
-## Faixas por horário
+A referência média exibida no app é a média entre os dois limites: R$ 1,50/km.
 
-O motorista configura:
+Você pode configurar quatro faixas de horário. Por exemplo:
 
-1. uma faixa padrão para os horários fora da dinâmica;
-2. uma faixa chamada `Dinâmica 1`;
-3. uma segunda faixa chamada `Dinâmica 2`.
+- Padrão: mínimo R$ 1,20 e ótimo R$ 1,80
+- 18:00–20:00: mínimo R$ 1,40 e ótimo R$ 2,00
+- 20:00–23:00: mínimo R$ 1,50 e ótimo R$ 2,10
 
-Cada faixa dinâmica tem:
+Horários que atravessam a meia-noite, como 23:00–02:00, também são aceitos.
 
-- botão para ativar ou desativar;
-- horário de início;
-- horário de término;
-- mínimo por km;
-- máximo/ótimo por km.
+## Leitura adaptada ao cartão atual da 99
 
-Exemplo:
+O parser foi testado com este formato de oferta:
 
-- fora da dinâmica: mínimo R$ 1,20/km e ótimo R$ 1,80/km;
-- das 18:00 às 22:00: mínimo R$ 1,40/km e ótimo R$ 2,00/km.
+- Total: R$ 8,40
+- Dinâmica: 1,6x
+- Tarifa base dinâmica: R$ 1,27
+- Até o passageiro: 6 min e 2 km
+- Corrida: 5 min e 2,3 km
 
-Nesse exemplo, uma oferta de R$ 1,30/km fica amarela fora da dinâmica, mas fica vermelha entre 18:00 e 22:00.
+Resultado bruto:
 
-Horários que atravessam a meia-noite também funcionam, como `22:00–02:00`. Se as duas faixas dinâmicas se cruzarem, `Dinâmica 1` tem prioridade.
+- Distância total: 4,3 km
+- Tempo total: 11 min
+- R$/km: aproximadamente R$ 1,95
+- R$/hora: aproximadamente R$ 45,82
 
-## Dados exibidos no box
+A tarifa base dinâmica não é confundida com o valor total da oferta.
 
-- valor bruto por quilômetro;
-- valor bruto por hora;
-- lucro estimado;
-- valor total da oferta;
-- distância e tempo totais;
-- custos estimados;
-- nome e limites da faixa usada naquele horário.
+## Telas
 
-## Como atualizar no GitHub
+- **Início:** regra ativa, status do leitor, teste do box e diagnóstico
+- **Regras:** faixa padrão e quatro horários configuráveis
+- **Simular:** cálculo manual e prévia realista do box
+- **Ajustes:** combustível, consumo, manutenção e tempo de exibição
 
-1. Extraia o ZIP.
-2. Copie todos os arquivos de dentro da pasta `RotaLucro` para a pasta do repositório atual.
-3. Confirme a substituição dos arquivos antigos.
-4. No GitHub Desktop, escreva `Corrige build e adiciona faixas por horário`.
-5. Clique em **Commit to main**.
-6. Clique em **Push origin**.
-7. Abra a aba **Actions** no GitHub.
-8. Aguarde o workflow **Android Build**.
-9. Baixe o artefato `RotaLucro-debug-apk`.
+## Privacidade
 
-## Como testar
+O serviço de acessibilidade processa apenas textos da tela da 99 e usa somente valor, tempo e distância para os cálculos. O projeto não automatiza o botão Aceitar, não recusa corridas e não armazena endereços, nomes ou avaliações.
 
-1. Instale o APK.
-2. Configure a faixa padrão.
-3. Ative e configure os horários de dinâmica desejados.
-4. Salve.
-5. Ative `RotaLucro — leitura de ofertas` nas configurações de acessibilidade.
-6. Abra o 99 Motorista e aguarde uma oferta.
+## Assinatura estável da versão de testes
 
-O RotaLucro não toca em botões e não aceita nem recusa corridas.
+O projeto inclui uma chave **somente de desenvolvimento** para que os APKs gerados em execuções diferentes do GitHub possam ser instalados como atualização, sem precisar desinstalar a versão anterior. Essa chave não deve ser usada em uma publicação definitiva.
 
-## Correção 0.3.1
+## Gerar o APK no GitHub
 
-- Corrigido o import de `KeyboardOptions` para `androidx.compose.foundation.text.KeyboardOptions`.
-- Mantidas as faixas de R$/km configuráveis por horário.
+1. Copie os arquivos deste projeto para o repositório `RotaLucro`.
+2. Faça **Commit to main** e depois **Push origin** no GitHub Desktop.
+3. Abra a aba **Actions** no GitHub.
+4. Execute **Android Build** ou aguarde a execução automática.
+5. Quando o processo ficar verde, abra-o e baixe o artefato `RotaLucro-debug-apk`.
+6. Extraia o ZIP do artefato e instale `app-debug.apk`.
+
+## Primeiro uso
+
+1. Abra o RotaLucro.
+2. Toque em **Acessibilidade**.
+3. Ative `RotaLucro — leitor de ofertas`.
+4. Volte ao app e toque em **Testar box**.
+5. Abra a 99 Motorista e aguarde uma oferta.
+6. Caso o box não apareça, volte ao painel inicial e consulte **Última leitura da 99**.
+
+## Tecnologias
+
+- Kotlin 2.2.10
+- Android Gradle Plugin 8.13.2
+- Gradle 8.13 no GitHub Actions
+- Android API 36
+- Jetpack Compose BOM 2026.06.01
+- Material 3

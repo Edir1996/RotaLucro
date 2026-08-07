@@ -6,6 +6,9 @@ data class RideOffer(
     val tripDistanceKm: Double,
     val pickupMinutes: Int,
     val tripMinutes: Int,
+    val surgeMultiplier: Double? = null,
+    val dynamicBaseFare: Double? = null,
+    val productName: String? = null,
     val sourceText: List<String> = emptyList()
 )
 
@@ -15,7 +18,10 @@ data class KmThreshold(
     val excellentPerKm: Double,
     val startMinuteOfDay: Int? = null,
     val endMinuteOfDay: Int? = null
-)
+) {
+    val middlePerKm: Double
+        get() = (minimumPerKm + excellentPerKm) / 2.0
+}
 
 data class ScheduledKmThreshold(
     val name: String,
@@ -31,15 +37,11 @@ data class ScheduledKmThreshold(
         val minute = minuteOfDay.coerceIn(0, 1439)
         val start = startMinuteOfDay.coerceIn(0, 1439)
         val end = endMinuteOfDay.coerceIn(0, 1439)
-
-        // Início e fim iguais são tratados como uma faixa vazia para evitar
-        // que uma configuração acidental substitua o perfil padrão o dia inteiro.
         if (start == end) return false
 
         return if (start < end) {
             minute in start until end
         } else {
-            // Permite horários que atravessam a meia-noite, por exemplo 22:00–02:00.
             minute >= start || minute < end
         }
     }
@@ -58,15 +60,16 @@ data class DriverSettings(
     val defaultExcellentPerKm: Double = 1.80,
     val scheduledThresholds: List<ScheduledKmThreshold> = defaultScheduledThresholds(),
     val fuelPricePerLiter: Double = 6.0,
-    val vehicleKmPerLiter: Double = 10.0,
-    val maintenancePerKm: Double = 0.35
+    val vehicleKmPerLiter: Double = 35.0,
+    val maintenancePerKm: Double = 0.18,
+    val overlayAutoHideSeconds: Int = 18
 ) {
     fun activeKmThreshold(minuteOfDay: Int): KmThreshold {
         return scheduledThresholds
             .firstOrNull { it.matches(minuteOfDay) }
             ?.asActiveThreshold()
             ?: KmThreshold(
-                name = "Fora da dinâmica",
+                name = "Faixa padrão",
                 minimumPerKm = defaultMinimumPerKm,
                 excellentPerKm = defaultExcellentPerKm
             )
@@ -75,7 +78,7 @@ data class DriverSettings(
     companion object {
         fun defaultScheduledThresholds(): List<ScheduledKmThreshold> = listOf(
             ScheduledKmThreshold(
-                name = "Dinâmica 1",
+                name = "Almoço",
                 enabled = false,
                 startMinuteOfDay = 11 * 60,
                 endMinuteOfDay = 14 * 60,
@@ -83,12 +86,28 @@ data class DriverSettings(
                 excellentPerKm = 2.00
             ),
             ScheduledKmThreshold(
-                name = "Dinâmica 2",
+                name = "Pico da tarde",
                 enabled = false,
-                startMinuteOfDay = 18 * 60,
-                endMinuteOfDay = 22 * 60,
+                startMinuteOfDay = 17 * 60,
+                endMinuteOfDay = 20 * 60,
                 minimumPerKm = 1.40,
                 excellentPerKm = 2.00
+            ),
+            ScheduledKmThreshold(
+                name = "Noite",
+                enabled = false,
+                startMinuteOfDay = 20 * 60,
+                endMinuteOfDay = 23 * 60,
+                minimumPerKm = 1.50,
+                excellentPerKm = 2.10
+            ),
+            ScheduledKmThreshold(
+                name = "Madrugada",
+                enabled = false,
+                startMinuteOfDay = 23 * 60,
+                endMinuteOfDay = 2 * 60,
+                minimumPerKm = 1.60,
+                excellentPerKm = 2.20
             )
         )
     }
@@ -101,7 +120,7 @@ enum class OfferRating {
 }
 
 data class RideResult(
-    val fare: Double,
+    val offer: RideOffer,
     val totalDistanceKm: Double,
     val totalMinutes: Int,
     val grossPerKm: Double,
@@ -111,9 +130,17 @@ data class RideResult(
     val estimatedProfit: Double,
     val profitPerKm: Double,
     val activeThreshold: KmThreshold,
-    val perKmRating: OfferRating,
     val rating: OfferRating
 ) {
+    val fare: Double
+        get() = offer.fare
+
     val estimatedCost: Double
         get() = fuelCost + maintenanceCost
 }
+
+data class ParseAttempt(
+    val offer: RideOffer?,
+    val reason: String,
+    val normalizedTextCount: Int
+)

@@ -26,18 +26,14 @@ object RideCalculator {
         val profitPerKm = estimatedProfit / totalDistance
 
         val activeThreshold = settings.activeKmThreshold(minuteOfDay)
-        val perKmRating = rateMetric(
+        val rating = rateMetric(
             value = grossPerKm,
             minimum = activeThreshold.minimumPerKm,
             excellent = activeThreshold.excellentPerKm
         )
 
-        // A classificação do box é definida pela faixa de R$/km ativa naquele horário.
-        // Uma corrida com lucro estimado igual ou menor que zero permanece vermelha.
-        val overallRating = if (estimatedProfit <= 0) OfferRating.BAD else perKmRating
-
         return RideResult(
-            fare = offer.fare,
+            offer = offer,
             totalDistanceKm = totalDistance,
             totalMinutes = totalMinutes,
             grossPerKm = grossPerKm,
@@ -47,8 +43,7 @@ object RideCalculator {
             estimatedProfit = estimatedProfit,
             profitPerKm = profitPerKm,
             activeThreshold = activeThreshold,
-            perKmRating = perKmRating,
-            rating = overallRating
+            rating = rating
         )
     }
 

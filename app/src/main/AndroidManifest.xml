@@ -3,7 +3,9 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.RotaLucro">
 
@@ -19,7 +21,7 @@
         <service
             android:name=".accessibility.RideAccessibilityService"
             android:exported="true"
-            android:label="RotaLucro — leitura de ofertas"
+            android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

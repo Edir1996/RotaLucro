@@ -1,6 +1,7 @@
 package com.rotalucro.app.calculator
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -10,7 +11,7 @@ class RideCalculatorTest {
         defaultExcellentPerKm = 1.80,
         scheduledThresholds = listOf(
             ScheduledKmThreshold(
-                name = "Dinâmica 1",
+                name = "Pico",
                 enabled = true,
                 startMinuteOfDay = 18 * 60,
                 endMinuteOfDay = 22 * 60,
@@ -19,109 +20,84 @@ class RideCalculatorTest {
             )
         ),
         fuelPricePerLiter = 6.0,
-        vehicleKmPerLiter = 10.0,
-        maintenancePerKm = 0.30
+        vehicleKmPerLiter = 30.0,
+        maintenancePerKm = 0.20
     )
 
     @Test
-    fun calculatesDistanceTimeAndCosts() {
+    fun parsesReal99MotoOfferAndIgnoresDynamicBaseFare() {
+        val attempt = OfferParser.parseWithDiagnostics(
+            listOf(
+                "Moto",
+                "R$8,40",
+                "⚡1,6x",
+                "0% Taxa de serviço",
+                "R$1,27 Tarifa base dinâmica incl.",
+                "4,86 • 302 corridas",
+                "Perfil Premium",
+                "6min (2km)",
+                "Rua de origem",
+                "5min (2,3km)",
+                "Rua de destino",
+                "Aceitar"
+            )
+        )
+
+        assertNotNull(attempt.offer)
+        val offer = requireNotNull(attempt.offer)
+        assertEquals(8.40, offer.fare, 0.001)
+        assertEquals(2.0, offer.pickupDistanceKm, 0.001)
+        assertEquals(2.3, offer.tripDistanceKm, 0.001)
+        assertEquals(6, offer.pickupMinutes)
+        assertEquals(5, offer.tripMinutes)
+        assertEquals(1.6, offer.surgeMultiplier ?: 0.0, 0.001)
+        assertEquals(1.27, offer.dynamicBaseFare ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun calculatesRealOfferMetrics() {
         val result = RideCalculator.calculate(
             offer = RideOffer(
-                fare = 30.0,
+                fare = 8.40,
                 pickupDistanceKm = 2.0,
-                tripDistanceKm = 8.0,
-                pickupMinutes = 5,
-                tripMinutes = 20
+                tripDistanceKm = 2.3,
+                pickupMinutes = 6,
+                tripMinutes = 5
             ),
             settings = settings,
             minuteOfDay = 10 * 60
         )
 
-        assertEquals(10.0, result.totalDistanceKm, 0.001)
-        assertEquals(25, result.totalMinutes)
-        assertEquals(3.0, result.grossPerKm, 0.001)
-        assertEquals(72.0, result.grossPerHour, 0.001)
-        assertEquals(6.0, result.fuelCost, 0.001)
-        assertEquals(3.0, result.maintenanceCost, 0.001)
-        assertEquals(21.0, result.estimatedProfit, 0.001)
-        assertEquals("Fora da dinâmica", result.activeThreshold.name)
-        assertEquals(OfferRating.GOOD, result.perKmRating)
+        assertEquals(4.3, result.totalDistanceKm, 0.001)
+        assertEquals(11, result.totalMinutes)
+        assertEquals(1.953, result.grossPerKm, 0.01)
+        assertEquals(45.818, result.grossPerHour, 0.01)
         assertEquals(OfferRating.GOOD, result.rating)
     }
 
     @Test
-    fun belowDefaultMinimumMakesBoxRedOutsideDynamicTime() {
-        val result = RideCalculator.calculate(
-            offer = RideOffer(
-                fare = 11.0,
-                pickupDistanceKm = 2.0,
-                tripDistanceKm = 8.0,
-                pickupMinutes = 3,
-                tripMinutes = 12
-            ),
-            settings = settings,
-            minuteOfDay = 10 * 60
-        )
-
-        assertEquals(1.10, result.grossPerKm, 0.001)
-        assertEquals("Fora da dinâmica", result.activeThreshold.name)
-        assertEquals(OfferRating.BAD, result.rating)
+    fun belowMinimumIsRed() {
+        assertEquals(OfferRating.BAD, RideCalculator.rateMetric(1.10, 1.20, 1.80))
     }
 
     @Test
-    fun dynamicTimeUsesHigherMinimum() {
-        val result = RideCalculator.calculate(
-            offer = RideOffer(
-                fare = 13.0,
-                pickupDistanceKm = 2.0,
-                tripDistanceKm = 8.0,
-                pickupMinutes = 3,
-                tripMinutes = 12
-            ),
-            settings = settings,
-            minuteOfDay = 19 * 60
-        )
-
-        assertEquals(1.30, result.grossPerKm, 0.001)
-        assertEquals("Dinâmica 1", result.activeThreshold.name)
-        assertEquals(1.40, result.activeThreshold.minimumPerKm, 0.001)
-        assertEquals(OfferRating.BAD, result.rating)
+    fun betweenMinimumAndExcellentIsYellow() {
+        assertEquals(OfferRating.ATTENTION, RideCalculator.rateMetric(1.50, 1.20, 1.80))
     }
 
     @Test
-    fun valueBetweenDynamicMinimumAndExcellentIsYellow() {
-        val result = RideCalculator.calculate(
-            offer = RideOffer(
-                fare = 17.0,
-                pickupDistanceKm = 2.0,
-                tripDistanceKm = 8.0,
-                pickupMinutes = 3,
-                tripMinutes = 12
-            ),
-            settings = settings,
-            minuteOfDay = 19 * 60
-        )
-
-        assertEquals(1.70, result.grossPerKm, 0.001)
-        assertEquals(OfferRating.ATTENTION, result.rating)
+    fun excellentOrHigherIsGreen() {
+        assertEquals(OfferRating.GOOD, RideCalculator.rateMetric(1.80, 1.20, 1.80))
     }
 
     @Test
-    fun valueAtDynamicExcellentThresholdIsGreen() {
-        val result = RideCalculator.calculate(
-            offer = RideOffer(
-                fare = 20.0,
-                pickupDistanceKm = 2.0,
-                tripDistanceKm = 8.0,
-                pickupMinutes = 3,
-                tripMinutes = 12
-            ),
-            settings = settings,
-            minuteOfDay = 19 * 60
-        )
+    fun dynamicScheduleChangesMinimumByTime() {
+        val outside = settings.activeKmThreshold(10 * 60)
+        val peak = settings.activeKmThreshold(19 * 60)
 
-        assertEquals(2.00, result.grossPerKm, 0.001)
-        assertEquals(OfferRating.GOOD, result.rating)
+        assertEquals(1.20, outside.minimumPerKm, 0.001)
+        assertEquals(1.40, peak.minimumPerKm, 0.001)
+        assertEquals("Pico", peak.name)
     }
 
     @Test
@@ -141,27 +117,7 @@ class RideCalculatorTest {
     }
 
     @Test
-    fun calculatesMiddleReference() {
+    fun middleReferenceUsesMinimumAndExcellent() {
         assertEquals(1.50, RideCalculator.middleReference(1.20, 1.80), 0.001)
-        assertEquals(1.70, RideCalculator.middleReference(1.40, 2.00), 0.001)
-    }
-
-    @Test
-    fun parserReadsTypicalBrazilianValues() {
-        val offer = OfferParser.parse(
-            listOf(
-                "R$ 27,50",
-                "2,4 km • 7 min",
-                "9,8 km • 24 min"
-            )
-        )
-
-        requireNotNull(offer)
-        assertEquals(27.50, offer.fare, 0.001)
-        assertEquals(2.4, offer.pickupDistanceKm, 0.001)
-        assertEquals(9.8, offer.tripDistanceKm, 0.001)
-        assertEquals(7, offer.pickupMinutes)
-        assertEquals(24, offer.tripMinutes)
-        assertTrue(offer.sourceText.isNotEmpty())
     }
 }

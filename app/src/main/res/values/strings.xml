@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">RotaLucro</string>
-    <string name="accessibility_service_description">Lê os textos das ofertas exibidas no app 99 Motorista para calcular valor por quilômetro, valor por hora e lucro estimado. Não aceita nem recusa corridas automaticamente.</string>
+    <string name="accessibility_service_description">Lê somente valor, tempo e distância nas ofertas da 99 para calcular R$/km, R$/hora e lucro estimado. Não aceita nem recusa corridas.</string>
+    <string name="accessibility_service_label">RotaLucro — leitor de ofertas</string>
 </resources>
