@@ -1,9 +1,15 @@
 package com.rotalucro.app.calculator
 
+import java.time.LocalTime
 import kotlin.math.max
+import kotlin.math.min
 
 object RideCalculator {
-    fun calculate(offer: RideOffer, settings: DriverSettings): RideResult {
+    fun calculate(
+        offer: RideOffer,
+        settings: DriverSettings,
+        minuteOfDay: Int = currentMinuteOfDay()
+    ): RideResult {
         val totalDistance = max(offer.pickupDistanceKm + offer.tripDistanceKm, 0.01)
         val totalMinutes = max(offer.pickupMinutes + offer.tripMinutes, 1)
         val totalHours = totalMinutes / 60.0
@@ -19,15 +25,19 @@ object RideCalculator {
         val estimatedProfit = offer.fare - fuelCost - maintenanceCost
         val profitPerKm = estimatedProfit / totalDistance
 
-        val meetsKm = grossPerKm >= settings.minimumPerKm
-        val meetsHour = grossPerHour >= settings.minimumPerHour
-        val rating = when {
-            meetsKm && meetsHour && estimatedProfit > 0 -> OfferRating.GOOD
-            meetsKm || meetsHour -> OfferRating.ATTENTION
-            else -> OfferRating.BAD
-        }
+        val activeThreshold = settings.activeKmThreshold(minuteOfDay)
+        val perKmRating = rateMetric(
+            value = grossPerKm,
+            minimum = activeThreshold.minimumPerKm,
+            excellent = activeThreshold.excellentPerKm
+        )
+
+        // A classificação do box é definida pela faixa de R$/km ativa naquele horário.
+        // Uma corrida com lucro estimado igual ou menor que zero permanece vermelha.
+        val overallRating = if (estimatedProfit <= 0) OfferRating.BAD else perKmRating
 
         return RideResult(
+            fare = offer.fare,
             totalDistanceKm = totalDistance,
             totalMinutes = totalMinutes,
             grossPerKm = grossPerKm,
@@ -36,7 +46,27 @@ object RideCalculator {
             maintenanceCost = maintenanceCost,
             estimatedProfit = estimatedProfit,
             profitPerKm = profitPerKm,
-            rating = rating
+            activeThreshold = activeThreshold,
+            perKmRating = perKmRating,
+            rating = overallRating
         )
+    }
+
+    fun rateMetric(value: Double, minimum: Double, excellent: Double): OfferRating {
+        val lower = min(minimum, excellent)
+        val upper = max(minimum, excellent)
+        return when {
+            value < lower -> OfferRating.BAD
+            value >= upper -> OfferRating.GOOD
+            else -> OfferRating.ATTENTION
+        }
+    }
+
+    fun middleReference(minimum: Double, excellent: Double): Double =
+        (minimum + excellent) / 2.0
+
+    fun currentMinuteOfDay(): Int {
+        val now = LocalTime.now()
+        return now.hour * 60 + now.minute
     }
 }

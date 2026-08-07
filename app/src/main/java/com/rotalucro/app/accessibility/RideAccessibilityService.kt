@@ -3,13 +3,13 @@ package com.rotalucro.app.accessibility
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.rotalucro.app.calculator.OfferParser
@@ -68,47 +68,112 @@ class RideAccessibilityService : AccessibilityService() {
 
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val density = resources.displayMetrics.density
-        val padding = (14 * density).toInt()
+        val accent = ratingColor(result.rating)
+        val outerPadding = dp(12, density)
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(padding, padding, padding, padding)
+            setPadding(outerPadding, outerPadding, outerPadding, outerPadding)
             background = GradientDrawable().apply {
                 cornerRadius = 18 * density
-                setColor(backgroundColor(result.rating))
+                setColor(Color.WHITE)
+                setStroke(dp(4, density), accent)
             }
-            elevation = 12 * density
+            elevation = 16 * density
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
 
         val title = TextView(this).apply {
             text = when (result.rating) {
-                OfferRating.GOOD -> "BOA CORRIDA"
-                OfferRating.ATTENTION -> "ANALISE COM CALMA"
-                OfferRating.BAD -> "CORRIDA FRACA"
+                OfferRating.GOOD -> "ÓTIMA CORRIDA"
+                OfferRating.ATTENTION -> "CORRIDA MÉDIA"
+                OfferRating.BAD -> "CORRIDA RUIM"
             }
-            setTextColor(Color.WHITE)
-            textSize = 18f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(accent)
+            textSize = 17f
+            setTypeface(typeface, Typeface.BOLD)
         }
 
-        val details = TextView(this).apply {
-            text = buildString {
-                append("${money(result.grossPerKm)}/km  •  ${money(result.grossPerHour)}/h\n")
-                append("Lucro estimado: ${money(result.estimatedProfit)}  •  ${formatKm(result.totalDistanceKm)}")
-            }
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            setPadding(0, (6 * density).toInt(), 0, 0)
-        }
-
-        val close = Button(this).apply {
-            text = "Fechar"
+        val close = TextView(this).apply {
+            text = "×"
+            textSize = 26f
+            gravity = Gravity.CENTER
+            setTextColor(Color.DKGRAY)
+            setPadding(dp(12, density), 0, 0, 0)
             setOnClickListener { removeOverlay() }
         }
 
-        container.addView(title)
+        header.addView(
+            title,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        header.addView(
+            close,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val metrics = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8, density), 0, dp(8, density))
+        }
+
+        metrics.addView(
+            metricColumn(
+                value = money(result.grossPerKm),
+                label = "por km",
+                color = ratingColor(result.perKmRating),
+                density = density
+            ),
+            weightedParams()
+        )
+        metrics.addView(
+            metricColumn(
+                value = money(result.grossPerHour),
+                label = "por hora",
+                color = Color.rgb(55, 71, 79),
+                density = density
+            ),
+            weightedParams()
+        )
+        metrics.addView(
+            metricColumn(
+                value = money(result.estimatedProfit),
+                label = "lucro est.",
+                color = if (result.estimatedProfit > 0) {
+                    Color.rgb(46, 125, 50)
+                } else {
+                    Color.rgb(211, 47, 47)
+                },
+                density = density
+            ),
+            weightedParams()
+        )
+
+        val details = TextView(this).apply {
+            text = buildString {
+                append("Oferta ${money(result.fare)}  •  ${formatKm(result.totalDistanceKm)}  •  ${result.totalMinutes} min\n")
+                append("${result.activeThreshold.name}: ")
+                append("${money(result.activeThreshold.minimumPerKm)}–")
+                append("${money(result.activeThreshold.excellentPerKm)}/km\n")
+                append("Custos: ${money(result.estimatedCost)}")
+            }
+            setTextColor(Color.rgb(45, 45, 45))
+            textSize = 13f
+            gravity = Gravity.CENTER_HORIZONTAL
+            setTypeface(typeface, Typeface.BOLD)
+        }
+
+        container.addView(header)
+        container.addView(metrics)
         container.addView(details)
-        container.addView(close)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -120,8 +185,8 @@ class RideAccessibilityService : AccessibilityService() {
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             x = 0
-            y = (36 * density).toInt()
-            horizontalMargin = 0.04f
+            y = dp(32, density)
+            horizontalMargin = 0.035f
         }
 
         runCatching {
@@ -130,6 +195,41 @@ class RideAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun metricColumn(
+        value: String,
+        label: String,
+        color: Int,
+        density: Float
+    ): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(2, density), 0, dp(2, density), 0)
+
+            addView(TextView(this@RideAccessibilityService).apply {
+                text = value
+                textSize = 16f
+                gravity = Gravity.CENTER
+                setTextColor(color)
+                setTypeface(typeface, Typeface.BOLD)
+                maxLines = 1
+            })
+
+            addView(TextView(this@RideAccessibilityService).apply {
+                text = label
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTextColor(Color.DKGRAY)
+            })
+        }
+    }
+
+    private fun weightedParams() = LinearLayout.LayoutParams(
+        0,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        1f
+    )
+
     private fun removeOverlay() {
         val view = overlayView ?: return
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -137,10 +237,10 @@ class RideAccessibilityService : AccessibilityService() {
         overlayView = null
     }
 
-    private fun backgroundColor(rating: OfferRating): Int = when (rating) {
-        OfferRating.GOOD -> Color.rgb(22, 124, 70)
-        OfferRating.ATTENTION -> Color.rgb(180, 108, 0)
-        OfferRating.BAD -> Color.rgb(170, 45, 45)
+    private fun ratingColor(rating: OfferRating): Int = when (rating) {
+        OfferRating.GOOD -> Color.rgb(46, 125, 50)
+        OfferRating.ATTENTION -> Color.rgb(249, 168, 37)
+        OfferRating.BAD -> Color.rgb(211, 47, 47)
     }
 
     private fun money(value: Double): String =
@@ -148,6 +248,8 @@ class RideAccessibilityService : AccessibilityService() {
 
     private fun formatKm(value: Double): String =
         String.format(Locale("pt", "BR"), "%.1f km", value)
+
+    private fun dp(value: Int, density: Float): Int = (value * density).toInt()
 
     private companion object {
         const val DRIVER_PACKAGE = "com.app99.driver"
