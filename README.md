@@ -1,4 +1,4 @@
-# RotaLucro — MVP Android 0.3
+# RotaLucro — MVP Android 0.3.1
 
 Aplicativo Android para analisar ofertas exibidas no 99 Motorista.
 
@@ -73,3 +73,8 @@ Horários que atravessam a meia-noite também funcionam, como `22:00–02:00`. S
 6. Abra o 99 Motorista e aguarde uma oferta.
 
 O RotaLucro não toca em botões e não aceita nem recusa corridas.
+
+## Correção 0.3.1
+
+- Corrigido o import de `KeyboardOptions` para `androidx.compose.foundation.text.KeyboardOptions`.
+- Mantidas as faixas de R$/km configuráveis por horário.
