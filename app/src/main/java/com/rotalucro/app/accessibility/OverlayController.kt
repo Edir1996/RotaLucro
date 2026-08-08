@@ -1,26 +1,22 @@
 package com.rotalucro.app.accessibility
 
-import java.lang.ref.WeakReference
+import com.rotalucro.app.runtime.RuntimeState
 
+/**
+ * Compatibility shim kept so repositories upgraded from v0.4/v0.5 do not retain
+ * a stale OverlayController that references methods removed by the OCR architecture.
+ *
+ * The v0.6+ overlay is owned directly by [RideAccessibilityService].
+ */
 object OverlayController {
-    @Volatile
-    private var serviceReference: WeakReference<RideAccessibilityService>? = null
+    fun isConnected(): Boolean = RuntimeState.accessibilityConnected
 
-    internal fun attach(service: RideAccessibilityService) {
-        serviceReference = WeakReference(service)
-    }
+    @Deprecated("Preview overlay is handled by the OCR/laboratory flow in v0.6+")
+    fun showPreview(): Boolean = false
 
-    internal fun detach(service: RideAccessibilityService) {
-        if (serviceReference?.get() === service) {
-            serviceReference = null
-        }
-    }
+    @Deprecated("Simulator capture is handled by the OCR laboratory in v0.6+")
+    fun enableSimulatorCapture(): Boolean = false
 
-    fun isConnected(): Boolean = serviceReference?.get() != null
-
-    fun showPreview(): Boolean {
-        val service = serviceReference?.get() ?: return false
-        service.showPreviewOverlay()
-        return true
-    }
+    @Deprecated("Simulator capture is handled by the OCR laboratory in v0.6+")
+    fun disableSimulatorCapture() = Unit
 }

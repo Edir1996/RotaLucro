@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+- Corrige build em repositórios atualizados a partir da v0.4/v0.5.
+- Adiciona um `OverlayController` de compatibilidade para substituir o arquivo legado que chamava `showPreviewOverlay()`, método removido na arquitetura OCR.
+- Mantém captura MediaProjection, ML Kit OCR, bolha flutuante e regras por horário da v0.6.0.
+
+
 ## 0.6.0
 
 - Substitui leitura dos valores via árvore de acessibilidade por OCR local com ML Kit.
