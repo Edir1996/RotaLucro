@@ -139,8 +139,20 @@ data class RideResult(
         get() = fuelCost + maintenanceCost
 }
 
+data class DetectedRouteSegment(
+    val minutes: Int,
+    val distanceKm: Double
+)
+
 data class ParseAttempt(
     val offer: RideOffer?,
     val reason: String,
-    val normalizedTextCount: Int
+    val normalizedTextCount: Int,
+    val normalizedTexts: List<String> = emptyList(),
+    val fare: Double? = null,
+    val pickupSegment: DetectedRouteSegment? = null,
+    val tripSegment: DetectedRouteSegment? = null,
+    val surgeMultiplier: Double? = null,
+    val dynamicBaseFare: Double? = null,
+    val productName: String? = null
 )

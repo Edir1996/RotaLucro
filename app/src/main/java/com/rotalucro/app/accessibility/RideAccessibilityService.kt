@@ -1,419 +1,417 @@
 package com.rotalucro.app.accessibility
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Space
 import android.widget.TextView
-import com.rotalucro.app.calculator.OfferParser
+import com.rotalucro.app.MainActivity
 import com.rotalucro.app.calculator.OfferRating
-import com.rotalucro.app.calculator.RideCalculator
-import com.rotalucro.app.calculator.RideOffer
-import com.rotalucro.app.calculator.RideResult
-import com.rotalucro.app.data.CaptureDiagnostics
-import com.rotalucro.app.data.DiagnosticsStore
 import com.rotalucro.app.data.SettingsStore
-import java.text.NumberFormat
-import java.util.Locale
+import com.rotalucro.app.ocr.OcrCaptureService
+import com.rotalucro.app.ocr.RideOverlayBus
+import com.rotalucro.app.runtime.RuntimeState
+import kotlin.math.abs
 
 class RideAccessibilityService : AccessibilityService() {
-    private val handler = Handler(Looper.getMainLooper())
-    private var overlayView: View? = null
-    private var lastSignature: String? = null
-    private var lastShownAt: Long = 0L
-    private var pendingPackage: String = DRIVER_PACKAGE
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var windowManager: WindowManager
+    private var bubble: View? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var bubbleStatus: View? = null
+    private var menu: View? = null
+    private var resultBox: View? = null
+    private var resultHideRunnable: Runnable? = null
 
-    private val scanRunnable = Runnable { scanCurrentOffer(pendingPackage) }
-    private val hideRunnable = Runnable { removeOverlay() }
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                RideOverlayBus.ACTION_RESULT -> showRideResult(intent)
+                OcrCaptureService.ACTION_STATUS_CHANGED -> updateBubbleStatus()
+                ACTION_SHOW_BUBBLE -> showBubble()
+                ACTION_HIDE_BUBBLE -> hideBubble()
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        serviceInfo = serviceInfo.apply {
-            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 80
-            flags = flags or
-                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
-            packageNames = arrayOf(DRIVER_PACKAGE)
+        RuntimeState.accessibilityConnected = true
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        registerInternalReceiver()
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_BUBBLE_VISIBLE, true)) {
+            showBubble()
         }
-        OverlayController.attach(this)
-        DiagnosticsStore.save(
-            this,
-            CaptureDiagnostics(
-                timestamp = System.currentTimeMillis(),
-                packageName = DRIVER_PACKAGE,
-                success = false,
-                message = "Serviço conectado. Aguardando uma oferta da 99."
-            )
-        )
+        mainHandler.post(statusTicker)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val packageName = event?.packageName?.toString().orEmpty()
-        if (!isDriverPackage(packageName)) return
-
-        pendingPackage = packageName
-        scheduleScans()
+        val pkg = event?.packageName?.toString().orEmpty()
+        if (pkg.isNotBlank() && pkg != packageName) {
+            RuntimeState.currentPackage = pkg
+            RuntimeState.is99Visible = pkg == PACKAGE_99
+        }
     }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
-        handler.removeCallbacksAndMessages(null)
-        removeOverlay()
-        OverlayController.detach(this)
+        RuntimeState.accessibilityConnected = false
+        RuntimeState.is99Visible = false
+        mainHandler.removeCallbacksAndMessages(null)
+        try { unregisterReceiver(receiver) } catch (_: Throwable) {}
+        removeView(bubble)
+        removeView(menu)
+        removeView(resultBox)
+        bubble = null
+        menu = null
+        resultBox = null
         super.onDestroy()
     }
 
-    internal fun showPreviewOverlay() {
-        val settings = SettingsStore.load(this)
-        val previewOffer = RideOffer(
-            fare = 8.40,
-            pickupDistanceKm = 2.0,
-            tripDistanceKm = 2.3,
-            pickupMinutes = 6,
-            tripMinutes = 5,
-            surgeMultiplier = 1.6,
-            dynamicBaseFare = 1.27,
-            productName = "Moto"
-        )
-        showOverlay(RideCalculator.calculate(previewOffer, settings), isPreview = true)
-    }
-
-    private fun scheduleScans() {
-        handler.removeCallbacks(scanRunnable)
-        handler.postDelayed(scanRunnable, 70)
-        handler.postDelayed(scanRunnable, 260)
-        handler.postDelayed(scanRunnable, 650)
-        handler.postDelayed(scanRunnable, 1_100)
-    }
-
-    private fun scanCurrentOffer(packageName: String) {
-        val texts = linkedSetOf<String>()
-        val roots = mutableListOf<AccessibilityNodeInfo>()
-
-        runCatching {
-            windows.orEmpty()
-                .mapNotNullTo(roots) { it.root }
+    private fun registerInternalReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(RideOverlayBus.ACTION_RESULT)
+            addAction(OcrCaptureService.ACTION_STATUS_CHANGED)
+            addAction(ACTION_SHOW_BUBBLE)
+            addAction(ACTION_HIDE_BUBBLE)
         }
-        rootInActiveWindow?.let { roots += it }
-
-        roots.forEach { root ->
-            runCatching { collectTexts(root, texts) }
-            runCatching { root.recycle() }
-        }
-
-        val attempt = OfferParser.parseWithDiagnostics(texts.toList())
-        val now = System.currentTimeMillis()
-        val offer = attempt.offer
-
-        if (offer == null) {
-            DiagnosticsStore.save(
-                this,
-                CaptureDiagnostics(
-                    timestamp = now,
-                    packageName = packageName,
-                    textCount = attempt.normalizedTextCount,
-                    success = false,
-                    message = attempt.reason
-                )
-            )
-            return
-        }
-
-        val result = RideCalculator.calculate(offer, SettingsStore.load(this))
-        val signature = buildString {
-            append("%.2f".format(Locale.US, offer.fare))
-            append('|')
-            append("%.2f".format(Locale.US, result.totalDistanceKm))
-            append('|')
-            append(result.totalMinutes)
-        }
-
-        DiagnosticsStore.save(
-            this,
-            CaptureDiagnostics(
-                timestamp = now,
-                packageName = packageName,
-                textCount = attempt.normalizedTextCount,
-                success = true,
-                message = attempt.reason,
-                summary = "${money(result.fare)} • ${formatKm(result.totalDistanceKm)} • ${result.totalMinutes} min • ${money(result.grossPerKm)}/km"
-            )
-        )
-
-        if (signature != lastSignature || now - lastShownAt > 2_000L) {
-            lastSignature = signature
-            lastShownAt = now
-            showOverlay(result, isPreview = false)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION") registerReceiver(receiver, filter)
         }
     }
 
-    private fun collectTexts(node: AccessibilityNodeInfo?, output: MutableSet<String>) {
-        if (node == null) return
-
-        node.text?.toString()?.takeIf { it.isNotBlank() }?.let(output::add)
-        node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let(output::add)
-        node.hintText?.toString()?.takeIf { it.isNotBlank() }?.let(output::add)
-
-        for (index in 0 until node.childCount) {
-            val child = node.getChild(index)
-            collectTexts(child, output)
-            runCatching { child?.recycle() }
+    private val statusTicker = object : Runnable {
+        override fun run() {
+            updateBubbleStatus()
+            mainHandler.postDelayed(this, 900L)
         }
     }
 
-    private fun showOverlay(result: RideResult, isPreview: Boolean) {
-        removeOverlay()
-        handler.removeCallbacks(hideRunnable)
+    private fun showBubble() {
+        if (!::windowManager.isInitialized || bubble != null) return
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_BUBBLE_VISIBLE, true).apply()
+        RuntimeState.bubbleVisible = true
 
-        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val density = resources.displayMetrics.density
-        val accent = ratingColor(result.rating)
-        val containerPadding = dp(12, density)
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(containerPadding, dp(10, density), containerPadding, dp(11, density))
-            background = roundedBackground(
-                fillColor = Color.rgb(252, 253, 255),
-                strokeColor = accent,
-                strokeWidth = dp(3, density),
-                radius = 18 * density
-            )
-            elevation = 18 * density
+        val size = dp(62)
+        val root = FrameLayout(this).apply {
+            background = roundedDrawable("#101827", 31f)
+            elevation = dp(10).toFloat()
         }
-
-        val topRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val statusBadge = TextView(this).apply {
-            text = if (isPreview) "PRÉVIA" else ratingLabel(result.rating)
+        val letter = TextView(this).apply {
+            text = "R"
             setTextColor(Color.WHITE)
-            textSize = 11f
-            letterSpacing = 0.08f
-            setTypeface(typeface, Typeface.BOLD)
+            textSize = 25f
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setPadding(dp(10, density), dp(5, density), dp(10, density), dp(5, density))
-            background = roundedBackground(accent, accent, 0, 40 * density)
+        }
+        root.addView(letter, FrameLayout.LayoutParams(-1, -1))
+
+        val dot = View(this).apply { background = circleDrawable("#64748B") }
+        root.addView(dot, FrameLayout.LayoutParams(dp(14), dp(14), Gravity.END or Gravity.BOTTOM).apply {
+            rightMargin = dp(3); bottomMargin = dp(3)
+        })
+        bubbleStatus = dot
+
+        val metrics = resources.displayMetrics
+        val params = WindowManager.LayoutParams(
+            size,
+            size,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (metrics.widthPixels - size - dp(14)).coerceAtLeast(0)
+            y = dp(150)
         }
 
-        val brandAndRule = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10, density), 0, 0, 0)
-            addView(TextView(this@RideAccessibilityService).apply {
-                text = "RotaLucro"
-                setTextColor(Color.rgb(15, 23, 42))
-                textSize = 14f
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            addView(TextView(this@RideAccessibilityService).apply {
-                text = result.activeThreshold.name
-                setTextColor(Color.rgb(100, 116, 139))
-                textSize = 11f
-            })
-        }
+        attachBubbleTouch(root, params)
+        windowManager.addView(root, params)
+        bubble = root
+        bubbleParams = params
+        updateBubbleStatus()
+    }
 
-        val close = TextView(this).apply {
-            text = "×"
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(71, 85, 105))
-            setPadding(dp(10, density), 0, 0, 0)
-            setOnClickListener { removeOverlay() }
-            contentDescription = "Fechar análise"
-        }
-
-        topRow.addView(statusBadge)
-        topRow.addView(
-            brandAndRule,
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        topRow.addView(close)
-
-        val metricsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(10, density), 0, dp(8, density))
-        }
-
-        metricsRow.addView(
-            metricColumn(
-                value = money(result.grossPerKm),
-                label = "POR KM",
-                valueColor = accent,
-                density = density
-            ),
-            weightedParams()
-        )
-        metricsRow.addView(verticalDivider(density))
-        metricsRow.addView(
-            metricColumn(
-                value = money(result.grossPerHour),
-                label = "POR HORA",
-                valueColor = Color.rgb(15, 23, 42),
-                density = density
-            ),
-            weightedParams()
-        )
-        metricsRow.addView(verticalDivider(density))
-        metricsRow.addView(
-            metricColumn(
-                value = money(result.estimatedProfit),
-                label = "LUCRO EST.",
-                valueColor = if (result.estimatedProfit >= 0) Color.rgb(22, 163, 74) else Color.rgb(220, 38, 38),
-                density = density
-            ),
-            weightedParams()
-        )
-
-        val detailLine = TextView(this).apply {
-            text = buildString {
-                append(money(result.fare))
-                result.offer.surgeMultiplier?.let { append("  •  ${oneDecimal(it)}x") }
-                append("  •  ${formatKm(result.totalDistanceKm)}")
-                append("  •  ${result.totalMinutes} min")
+    private fun attachBubbleTouch(view: View, params: WindowManager.LayoutParams) {
+        var startX = 0
+        var startY = 0
+        var touchX = 0f
+        var touchY = 0f
+        var moved = false
+        view.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = params.x
+                    startY = params.y
+                    touchX = event.rawX
+                    touchY = event.rawY
+                    moved = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - touchX).toInt()
+                    val dy = (event.rawY - touchY).toInt()
+                    if (abs(dx) > dp(5) || abs(dy) > dp(5)) moved = true
+                    params.x = (startX + dx).coerceIn(0, (resources.displayMetrics.widthPixels - dp(50)).coerceAtLeast(0))
+                    params.y = (startY + dy).coerceIn(dp(20), (resources.displayMetrics.heightPixels - dp(90)).coerceAtLeast(dp(20)))
+                    try { windowManager.updateViewLayout(view, params) } catch (_: Throwable) {}
+                    if (menu != null) hideMenu()
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) toggleMenu()
+                    true
+                }
+                else -> false
             }
-            setTextColor(Color.rgb(30, 41, 59))
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTypeface(typeface, Typeface.BOLD)
+        }
+    }
+
+    private fun toggleMenu() {
+        if (menu == null) showMenu() else hideMenu()
+    }
+
+    private fun showMenu() {
+        val bubbleP = bubbleParams ?: return
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = roundedDrawable("#FFFFFF", 18f, strokeColor = "#E2E8F0", strokeWidth = dp(1))
+            elevation = dp(12).toFloat()
+        }
+        panel.addView(TextView(this).apply {
+            text = "RotaLucro"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        panel.addView(TextView(this).apply {
+            text = if (RuntimeState.captureActive) "OCR ativo" else "OCR pausado"
+            setTextColor(Color.parseColor(if (RuntimeState.captureActive) "#16A34A" else "#64748B"))
+            textSize = 12f
+            setPadding(0, dp(2), 0, dp(10))
+        })
+
+        addMenuButton(panel, if (RuntimeState.captureActive) "Desativar OCR" else "Ativar OCR") {
+            if (RuntimeState.captureActive) {
+                OcrCaptureService.stop(this)
+                updateBubbleStatus()
+                hideMenu()
+            } else {
+                openApp(requestCapture = true)
+                hideMenu()
+            }
+        }
+        addMenuButton(panel, "Ler agora") {
+            OcrCaptureService.scanNow(this)
+            hideMenu()
+        }
+        addMenuButton(panel, "Abrir RotaLucro") {
+            openApp(false)
+            hideMenu()
+        }
+        addMenuButton(panel, "Ocultar bolha", destructive = true) {
+            hideMenu()
+            hideBubble()
         }
 
-        val ruleLine = TextView(this).apply {
-            text = "Ruim < ${money(result.activeThreshold.minimumPerKm)}  •  Média até ${money(result.activeThreshold.excellentPerKm)}  •  Ótima ≥ ${money(result.activeThreshold.excellentPerKm)}"
-            setTextColor(Color.rgb(100, 116, 139))
-            textSize = 10.5f
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4, density), 0, 0)
+        val panelWidth = dp(220)
+        val params = WindowManager.LayoutParams(
+            panelWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (bubbleP.x - panelWidth + dp(62)).coerceAtLeast(dp(8))
+            y = (bubbleP.y + dp(72)).coerceAtMost(resources.displayMetrics.heightPixels - dp(320))
+        }
+        windowManager.addView(panel, params)
+        menu = panel
+    }
+
+    private fun addMenuButton(parent: LinearLayout, label: String, destructive: Boolean = false, action: () -> Unit) {
+        parent.addView(TextView(this).apply {
+            text = label
+            setTextColor(Color.parseColor(if (destructive) "#DC2626" else "#0F172A"))
+            textSize = 15f
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(11), dp(12), dp(11))
+            background = roundedDrawable(if (destructive) "#FEF2F2" else "#F8FAFC", 11f)
+            setOnClickListener { action() }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { bottomMargin = dp(7) })
+    }
+
+    private fun hideMenu() {
+        removeView(menu)
+        menu = null
+    }
+
+    private fun hideBubble() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_BUBBLE_VISIBLE, false).apply()
+        RuntimeState.bubbleVisible = false
+        hideMenu()
+        removeView(bubble)
+        bubble = null
+        bubbleParams = null
+        bubbleStatus = null
+    }
+
+    private fun updateBubbleStatus() {
+        val color = when {
+            RuntimeState.captureActive && RuntimeState.is99Visible -> "#22C55E"
+            RuntimeState.captureActive -> "#38BDF8"
+            else -> "#64748B"
+        }
+        bubbleStatus?.background = circleDrawable(color)
+    }
+
+    private fun showRideResult(intent: Intent) {
+        removeView(resultBox)
+        resultBox = null
+        resultHideRunnable?.let { mainHandler.removeCallbacks(it) }
+
+        val perKm = intent.getDoubleExtra(RideOverlayBus.EXTRA_PER_KM, 0.0)
+        val perHour = intent.getDoubleExtra(RideOverlayBus.EXTRA_PER_HOUR, 0.0)
+        val distance = intent.getDoubleExtra(RideOverlayBus.EXTRA_DISTANCE, 0.0)
+        val minutes = intent.getIntExtra(RideOverlayBus.EXTRA_MINUTES, 0)
+        val fare = intent.getDoubleExtra(RideOverlayBus.EXTRA_FARE, 0.0)
+        val profit = intent.getDoubleExtra(RideOverlayBus.EXTRA_PROFIT, 0.0)
+        val min = intent.getDoubleExtra(RideOverlayBus.EXTRA_MINIMUM, 0.0)
+        val excellent = intent.getDoubleExtra(RideOverlayBus.EXTRA_EXCELLENT, 0.0)
+        val thresholdName = intent.getStringExtra(RideOverlayBus.EXTRA_THRESHOLD_NAME).orEmpty()
+        val rating = runCatching { OfferRating.valueOf(intent.getStringExtra(RideOverlayBus.EXTRA_RATING).orEmpty()) }
+            .getOrDefault(OfferRating.ATTENTION)
+
+        val accent = when (rating) {
+            OfferRating.BAD -> "#EF4444"
+            OfferRating.ATTENTION -> "#F59E0B"
+            OfferRating.GOOD -> "#22C55E"
+        }
+        val ratingLabel = when (rating) {
+            OfferRating.BAD -> "RUIM"
+            OfferRating.ATTENTION -> "MÉDIA"
+            OfferRating.GOOD -> "ÓTIMA"
         }
 
-        container.addView(topRow)
-        container.addView(metricsRow)
-        container.addView(detailLine)
-        container.addView(ruleLine)
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(11), dp(16), dp(12))
+            background = roundedDrawable("#FFFFFF", 18f, strokeColor = accent, strokeWidth = dp(3))
+            elevation = dp(14).toFloat()
+        }
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(TextView(this).apply {
+            text = money(perKm) + "/km"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 25f
+            typeface = Typeface.DEFAULT_BOLD
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(TextView(this).apply {
+            text = ratingLabel
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = roundedDrawable(accent, 20f)
+        })
+        card.addView(top)
+
+        card.addView(TextView(this).apply {
+            text = "${money(perHour)}/h  •  ${oneDecimal(distance)} km  •  $minutes min  •  ${money(fare)}"
+            setTextColor(Color.parseColor("#334155"))
+            textSize = 13.5f
+            setPadding(0, dp(5), 0, 0)
+        })
+        card.addView(TextView(this).apply {
+            text = "$thresholdName  •  mín ${money(min)}  •  ótima ${money(excellent)}  •  lucro est. ${money(profit)}"
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 11.5f
+            setPadding(0, dp(3), 0, 0)
+        })
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(42, density)
+            gravity = Gravity.TOP
+            x = 0
+            y = dp(58)
             horizontalMargin = 0.025f
         }
+        windowManager.addView(card, params)
+        resultBox = card
 
-        runCatching {
-            windowManager.addView(container, params)
-            overlayView = container
-            val timeoutSeconds = SettingsStore.load(this).overlayAutoHideSeconds.coerceIn(8, 45)
-            handler.postDelayed(hideRunnable, timeoutSeconds * 1_000L)
+        val seconds = SettingsStore.load(this).overlayAutoHideSeconds
+        val runnable = Runnable {
+            removeView(resultBox)
+            resultBox = null
         }
+        resultHideRunnable = runnable
+        mainHandler.postDelayed(runnable, seconds * 1000L)
     }
 
-    private fun metricColumn(
-        value: String,
-        label: String,
-        valueColor: Int,
-        density: Float
-    ): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
-        setPadding(dp(3, density), 0, dp(3, density), 0)
-
-        addView(TextView(this@RideAccessibilityService).apply {
-            text = value
-            textSize = 16.5f
-            gravity = Gravity.CENTER
-            setTextColor(valueColor)
-            setTypeface(typeface, Typeface.BOLD)
-            maxLines = 1
-        })
-        addView(TextView(this@RideAccessibilityService).apply {
-            text = label
-            textSize = 9.5f
-            letterSpacing = 0.06f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(100, 116, 139))
-            setTypeface(typeface, Typeface.BOLD)
-        })
+    private fun openApp(requestCapture: Boolean) {
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_REQUEST_CAPTURE, requestCapture)
+        )
     }
 
-    private fun verticalDivider(density: Float): View = Space(this).apply {
-        background = GradientDrawable().apply { setColor(Color.rgb(226, 232, 240)) }
-        layoutParams = LinearLayout.LayoutParams(dp(1, density), dp(38, density))
+    private fun removeView(view: View?) {
+        if (view == null || !::windowManager.isInitialized) return
+        try { windowManager.removeView(view) } catch (_: Throwable) {}
     }
 
-    private fun weightedParams() = LinearLayout.LayoutParams(
-        0,
-        LinearLayout.LayoutParams.WRAP_CONTENT,
-        1f
-    )
+    private fun roundedDrawable(fill: String, radiusDp: Float, strokeColor: String? = null, strokeWidth: Int = 0) =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Color.parseColor(fill))
+            cornerRadius = dp(radiusDp.toInt()).toFloat()
+            if (strokeColor != null && strokeWidth > 0) setStroke(strokeWidth, Color.parseColor(strokeColor))
+        }
 
-    private fun roundedBackground(
-        fillColor: Int,
-        strokeColor: Int,
-        strokeWidth: Int,
-        radius: Float
-    ) = GradientDrawable().apply {
-        cornerRadius = radius
-        setColor(fillColor)
-        if (strokeWidth > 0) setStroke(strokeWidth, strokeColor)
+    private fun circleDrawable(fill: String) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.parseColor(fill))
+        setStroke(dp(2), Color.WHITE)
     }
 
-    private fun removeOverlay() {
-        handler.removeCallbacks(hideRunnable)
-        val view = overlayView ?: return
-        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        runCatching { windowManager.removeView(view) }
-        overlayView = null
-    }
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun money(value: Double): String = "R$${"%.2f".format(value).replace('.', ',')}"
+    private fun oneDecimal(value: Double): String = "%.1f".format(value).replace('.', ',')
 
-    private fun isDriverPackage(packageName: String): Boolean =
-        packageName == DRIVER_PACKAGE || packageName.startsWith("$DRIVER_PACKAGE.")
-
-    private fun ratingLabel(rating: OfferRating): String = when (rating) {
-        OfferRating.GOOD -> "ÓTIMA"
-        OfferRating.ATTENTION -> "MÉDIA"
-        OfferRating.BAD -> "RUIM"
-    }
-
-    private fun ratingColor(rating: OfferRating): Int = when (rating) {
-        OfferRating.GOOD -> Color.rgb(22, 163, 74)
-        OfferRating.ATTENTION -> Color.rgb(234, 179, 8)
-        OfferRating.BAD -> Color.rgb(220, 38, 38)
-    }
-
-    private fun money(value: Double): String =
-        NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(value)
-
-    private fun formatKm(value: Double): String =
-        String.format(Locale("pt", "BR"), "%.1f km", value)
-
-    private fun oneDecimal(value: Double): String =
-        String.format(Locale("pt", "BR"), "%.1f", value)
-
-    private fun dp(value: Int, density: Float): Int = (value * density).toInt()
-
-    private companion object {
-        const val DRIVER_PACKAGE = "com.app99.driver"
+    companion object {
+        const val PACKAGE_99 = "com.app99.driver"
+        const val ACTION_SHOW_BUBBLE = "com.rotalucro.app.action.SHOW_BUBBLE"
+        const val ACTION_HIDE_BUBBLE = "com.rotalucro.app.action.HIDE_BUBBLE"
+        private const val PREFS = "bubble_settings"
+        private const val KEY_BUBBLE_VISIBLE = "visible"
     }
 }

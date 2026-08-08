@@ -14,8 +14,8 @@ android {
         applicationId = "com.rotalucro.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -76,6 +76,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // Modelo OCR latino empacotado no APK: funciona sem download do modelo.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

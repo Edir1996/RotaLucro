@@ -1,249 +1,147 @@
 package com.rotalucro.app.ui
 
-import androidx.compose.foundation.BorderStroke
+import android.content.Context
+import android.provider.Settings
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Calculate
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.DirectionsCar
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Save
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rotalucro.app.calculator.DriverSettings
-import com.rotalucro.app.calculator.KmThreshold
-import com.rotalucro.app.calculator.OfferRating
 import com.rotalucro.app.calculator.RideCalculator
-import com.rotalucro.app.calculator.RideOffer
-import com.rotalucro.app.calculator.RideResult
 import com.rotalucro.app.calculator.ScheduledKmThreshold
-import com.rotalucro.app.data.CaptureDiagnostics
-import com.rotalucro.app.ui.theme.AppBackground
-import com.rotalucro.app.ui.theme.BorderColor
-import com.rotalucro.app.ui.theme.BrandAmber
-import com.rotalucro.app.ui.theme.BrandBlue
-import com.rotalucro.app.ui.theme.BrandGreen
-import com.rotalucro.app.ui.theme.BrandNavy
-import com.rotalucro.app.ui.theme.BrandRed
-import com.rotalucro.app.ui.theme.CardSurface
-import com.rotalucro.app.ui.theme.MutedText
-import com.rotalucro.app.ui.theme.SlateText
-import java.text.NumberFormat
+import com.rotalucro.app.data.OcrDiagnostics
+import com.rotalucro.app.data.OcrDiagnosticsStore
+import com.rotalucro.app.data.SettingsStore
+import com.rotalucro.app.runtime.RuntimeState
+import com.rotalucro.app.ui.theme.*
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
-import kotlin.math.max
-import kotlin.math.min
 
-private enum class Destination(
-    val label: String,
-    val icon: ImageVector
-) {
+private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Início", Icons.Rounded.Home),
-    RULES("Regras", Icons.Rounded.Schedule),
-    SIMULATOR("Simular", Icons.Rounded.Calculate),
+    RULES("Regras", Icons.Rounded.Tune),
+    READER("Leitor", Icons.Rounded.Visibility),
     SETTINGS("Ajustes", Icons.Rounded.Settings)
 }
 
-private data class ScheduleDraft(
-    val name: String,
-    val enabled: Boolean,
-    val start: String,
-    val end: String,
-    val minimum: String,
-    val excellent: String
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RotaLucroApp(
-    initialSettings: DriverSettings,
-    accessibilityEnabled: Boolean,
-    readerConnected: Boolean,
-    diagnostics: CaptureDiagnostics,
+    onRequestCapture: () -> Unit,
+    onStopCapture: () -> Unit,
+    onScanNow: () -> Unit,
     onOpenAccessibility: () -> Unit,
-    onTestOverlay: () -> Unit,
-    onRefreshDiagnostics: () -> Unit,
-    onSaveSettings: (DriverSettings) -> Unit
+    onShowBubble: () -> Unit,
+    onHideBubble: () -> Unit,
+    onOpenSimulator: () -> Unit
 ) {
-    var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
+    val context = LocalContext.current
+    var tab by remember { mutableStateOf(Tab.HOME) }
+    var diagnostics by remember { mutableStateOf(OcrDiagnosticsStore.load(context)) }
+    var settings by remember { mutableStateOf(SettingsStore.load(context)) }
+    var savedMessage by remember { mutableStateOf<String?>(null) }
 
-    var defaultMinimum by remember { mutableStateOf(initialSettings.defaultMinimumPerKm.asInput()) }
-    var defaultExcellent by remember { mutableStateOf(initialSettings.defaultExcellentPerKm.asInput()) }
-    var fuelPrice by remember { mutableStateOf(initialSettings.fuelPricePerLiter.asInput()) }
-    var kmPerLiter by remember { mutableStateOf(initialSettings.vehicleKmPerLiter.asInput()) }
-    var maintenancePerKm by remember { mutableStateOf(initialSettings.maintenancePerKm.asInput()) }
-    var overlayTimeout by remember { mutableStateOf(initialSettings.overlayAutoHideSeconds.toString()) }
-
-    val startingSchedules = remember(initialSettings) {
-        val defaults = DriverSettings.defaultScheduledThresholds()
-        List(4) { index ->
-            val schedule = initialSettings.scheduledThresholds.getOrElse(index) { defaults[index] }
-            ScheduleDraft(
-                name = schedule.name,
-                enabled = schedule.enabled,
-                start = schedule.startMinuteOfDay.asTimeInput(),
-                end = schedule.endMinuteOfDay.asTimeInput(),
-                minimum = schedule.minimumPerKm.asInput(),
-                excellent = schedule.excellentPerKm.asInput()
-            )
+    LaunchedEffect(Unit) {
+        while (true) {
+            diagnostics = OcrDiagnosticsStore.load(context)
+            delay(850L)
         }
     }
-    var schedules by remember { mutableStateOf(startingSchedules) }
-
-    fun buildSettings(): DriverSettings = DriverSettings(
-        defaultMinimumPerKm = defaultMinimum.toNumber(1.20),
-        defaultExcellentPerKm = defaultExcellent.toNumber(1.80),
-        scheduledThresholds = schedules.mapIndexed { index, draft ->
-            val fallback = DriverSettings.defaultScheduledThresholds()[index]
-            ScheduledKmThreshold(
-                name = draft.name.ifBlank { fallback.name },
-                enabled = draft.enabled,
-                startMinuteOfDay = draft.start.toMinuteOfDay(fallback.startMinuteOfDay),
-                endMinuteOfDay = draft.end.toMinuteOfDay(fallback.endMinuteOfDay),
-                minimumPerKm = draft.minimum.toNumber(fallback.minimumPerKm),
-                excellentPerKm = draft.excellent.toNumber(fallback.excellentPerKm)
-            )
-        },
-        fuelPricePerLiter = fuelPrice.toNumber(6.0),
-        vehicleKmPerLiter = kmPerLiter.toNumber(35.0),
-        maintenancePerKm = maintenancePerKm.toNumber(0.18),
-        overlayAutoHideSeconds = overlayTimeout.toIntOrNull()?.coerceIn(8, 45) ?: 18
-    )
-
-    val currentSettings = buildSettings()
+    LaunchedEffect(savedMessage) {
+        if (savedMessage != null) {
+            delay(1800)
+            savedMessage = null
+        }
+    }
 
     Scaffold(
         containerColor = AppBackground,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("RotaLucro", fontWeight = FontWeight.ExtraBold, color = SlateText)
-                        Text("análise inteligente de ofertas", fontSize = 11.sp, color = MutedText)
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = CardSurface
-                )
-            )
-        },
         bottomBar = {
-            NavigationBar(containerColor = CardSurface, tonalElevation = 8.dp) {
-                Destination.entries.forEach { item ->
+            NavigationBar(containerColor = Color.White, tonalElevation = 10.dp) {
+                Tab.entries.forEach { item ->
                     NavigationBarItem(
-                        selected = destination == item,
-                        onClick = { destination = item },
+                        selected = tab == item,
+                        onClick = { tab = item },
                         icon = { Icon(item.icon, contentDescription = item.label) },
                         label = { Text(item.label) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = BrandBlue,
                             selectedTextColor = BrandBlue,
-                            indicatorColor = Color(0xFFDBEAFE),
-                            unselectedIconColor = MutedText,
-                            unselectedTextColor = MutedText
+                            indicatorColor = Color(0xFFEEF4FF)
                         )
                     )
                 }
             }
+        },
+        snackbarHost = {
+            if (savedMessage != null) {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.BottomCenter) {
+                    Surface(shape = RoundedCornerShape(14.dp), color = BrandNavy) {
+                        Text(savedMessage!!, color = Color.White, modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp))
+                    }
+                }
+            }
         }
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            when (destination) {
-                Destination.HOME -> DashboardScreen(
-                    settings = currentSettings,
-                    accessibilityEnabled = accessibilityEnabled,
-                    readerConnected = readerConnected,
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Header(diagnostics)
+            when (tab) {
+                Tab.HOME -> HomeScreen(
                     diagnostics = diagnostics,
+                    settings = settings,
+                    onRequestCapture = onRequestCapture,
+                    onStopCapture = onStopCapture,
                     onOpenAccessibility = onOpenAccessibility,
-                    onTestOverlay = onTestOverlay,
-                    onRefreshDiagnostics = onRefreshDiagnostics
+                    onShowBubble = onShowBubble,
+                    onOpenSimulator = onOpenSimulator,
+                    onReader = { tab = Tab.READER }
                 )
-
-                Destination.RULES -> RulesScreen(
-                    defaultMinimum = defaultMinimum,
-                    defaultExcellent = defaultExcellent,
-                    schedules = schedules,
-                    onDefaultMinimumChange = { defaultMinimum = it },
-                    onDefaultExcellentChange = { defaultExcellent = it },
-                    onScheduleChange = { index, draft ->
-                        schedules = schedules.toMutableList().also { it[index] = draft }
+                Tab.RULES -> RulesScreen(
+                    settings = settings,
+                    onSettingsChanged = { settings = it },
+                    onSave = {
+                        SettingsStore.save(context, settings)
+                        savedMessage = "Regras salvas"
+                    }
+                )
+                Tab.READER -> ReaderScreen(
+                    diagnostics = diagnostics,
+                    onRequestCapture = onRequestCapture,
+                    onStopCapture = onStopCapture,
+                    onScanNow = onScanNow,
+                    onOpenSimulator = onOpenSimulator
+                )
+                Tab.SETTINGS -> SettingsScreen(
+                    settings = settings,
+                    onSettingsChanged = { settings = it },
+                    onSave = {
+                        SettingsStore.save(context, settings)
+                        savedMessage = "Ajustes salvos"
                     },
-                    onSave = { onSaveSettings(buildSettings()) }
-                )
-
-                Destination.SIMULATOR -> SimulatorScreen(settings = currentSettings)
-
-                Destination.SETTINGS -> SettingsScreen(
-                    fuelPrice = fuelPrice,
-                    kmPerLiter = kmPerLiter,
-                    maintenancePerKm = maintenancePerKm,
-                    overlayTimeout = overlayTimeout,
-                    onFuelPriceChange = { fuelPrice = it },
-                    onKmPerLiterChange = { kmPerLiter = it },
-                    onMaintenanceChange = { maintenancePerKm = it },
-                    onOverlayTimeoutChange = { overlayTimeout = it },
-                    onSave = { onSaveSettings(buildSettings()) }
+                    onOpenAccessibility = onOpenAccessibility,
+                    onShowBubble = onShowBubble,
+                    onHideBubble = onHideBubble
                 )
             }
         }
@@ -251,894 +149,482 @@ fun RotaLucroApp(
 }
 
 @Composable
-private fun DashboardScreen(
-    settings: DriverSettings,
-    accessibilityEnabled: Boolean,
-    readerConnected: Boolean,
-    diagnostics: CaptureDiagnostics,
-    onOpenAccessibility: () -> Unit,
-    onTestOverlay: () -> Unit,
-    onRefreshDiagnostics: () -> Unit
-) {
-    val currentMinute = RideCalculator.currentMinuteOfDay()
-    val activeThreshold = settings.activeKmThreshold(currentMinute)
+private fun Header(diagnostics: OcrDiagnostics) {
+    Box(
+        Modifier.fillMaxWidth().background(
+            Brush.horizontalGradient(listOf(Color(0xFF0B1220), Color(0xFF172554), Color(0xFF1D4ED8)))
+        ).padding(horizontal = 20.dp, vertical = 17.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = .12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("R", color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("RotaLucro", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("Copiloto de rentabilidade", color = Color(0xFFBFDBFE), fontSize = 12.sp)
+            }
+            StatusPill(
+                text = if (diagnostics.captureActive) "OCR ATIVO" else "OCR OFF",
+                color = if (diagnostics.captureActive) Color(0xFF22C55E) else Color(0xFF64748B)
+            )
+        }
+    }
+}
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp, 14.dp, 16.dp, 30.dp),
+@Composable
+private fun HomeScreen(
+    diagnostics: OcrDiagnostics,
+    settings: DriverSettings,
+    onRequestCapture: () -> Unit,
+    onStopCapture: () -> Unit,
+    onOpenAccessibility: () -> Unit,
+    onShowBubble: () -> Unit,
+    onOpenSimulator: () -> Unit,
+    onReader: () -> Unit
+) {
+    val active = settings.activeKmThreshold(RideCalculator.currentMinuteOfDay())
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item {
-            HeroCard(activeThreshold, currentMinute)
-        }
-        item {
-            SectionHeader("Monitoramento", "Confira se o leitor está pronto antes de abrir a 99.")
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatusCard(
-                    title = "Acessibilidade",
-                    subtitle = if (accessibilityEnabled) "Ativada" else "Precisa ativar",
-                    active = accessibilityEnabled,
-                    modifier = Modifier.weight(1f)
-                )
-                StatusCard(
-                    title = "Leitor",
-                    subtitle = if (readerConnected) "Conectado" else "Desconectado",
-                    active = readerConnected,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onTestOverlay,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Testar box")
-                }
-                OutlinedButton(
-                    onClick = onOpenAccessibility,
-                    modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, BrandBlue)
-                ) {
-                    Text("Acessibilidade")
-                }
-            }
-        }
-        item {
-            DiagnosticCard(diagnostics, onRefreshDiagnostics)
-        }
-        item {
-            HowItWorksCard()
-        }
-    }
-}
-
-@Composable
-private fun HeroCard(threshold: KmThreshold, currentMinute: Int) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(BrandNavy, Color(0xFF172554), BrandBlue)
-                )
-            )
-            .padding(20.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Regra ativa agora",
-                        color = Color(0xFFBFDBFE),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        threshold.name,
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-                Surface(
-                    color = Color.White.copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(99.dp)
-                ) {
-                    Text(
-                        currentMinute.asTimeInput(),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Text(
-                "A cor do box é definida pelo valor total recebido dividido por todos os quilômetros até buscar e deixar o passageiro.",
-                color = Color(0xFFE2E8F0),
-                fontSize = 13.sp,
-                lineHeight = 19.sp
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ThresholdMiniCard(
-                    label = "Mínimo",
-                    value = money(threshold.minimumPerKm),
-                    color = BrandRed,
-                    modifier = Modifier.weight(1f)
-                )
-                ThresholdMiniCard(
-                    label = "Média",
-                    value = money(threshold.middlePerKm),
-                    color = BrandAmber,
-                    modifier = Modifier.weight(1f)
-                )
-                ThresholdMiniCard(
-                    label = "Ótima",
-                    value = money(threshold.excellentPerKm),
-                    color = BrandGreen,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ThresholdMiniCard(
-    label: String,
-    value: String,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.10f))
-            .padding(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.height(5.dp))
-        Text(label, color = Color(0xFFCBD5E1), fontSize = 10.sp)
-        Text("$value/km", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun StatusCard(
-    title: String,
-    subtitle: String,
-    active: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(1.dp, BorderColor)
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = if (active) Color(0xFFDCFCE7) else Color(0xFFFEE2E2)
-            ) {
-                Icon(
-                    imageVector = if (active) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
-                    contentDescription = null,
-                    tint = if (active) BrandGreen else BrandRed,
-                    modifier = Modifier.padding(8.dp).size(20.dp)
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text(subtitle, color = if (active) BrandGreen else BrandRed, fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DiagnosticCard(
-    diagnostics: CaptureDiagnostics,
-    onRefresh: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(1.dp, BorderColor)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        CardBlock {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Última leitura da 99", fontWeight = FontWeight.ExtraBold)
-                    Text(diagnostics.formattedTime, color = MutedText, fontSize = 12.sp)
+                Column(Modifier.weight(1f)) {
+                    Text("Sistema", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        when {
+                            !diagnostics.accessibilityConnected -> "Ative a acessibilidade para detectar a 99 e usar a bolha."
+                            !diagnostics.captureActive -> "Leitor pronto. Falta autorizar a captura OCR."
+                            diagnostics.appDetected == "99" -> "99 detectada. OCR analisando ofertas."
+                            else -> "Tudo pronto. Aguardando uma oferta da 99."
+                        },
+                        color = MutedText,
+                        fontSize = 13.sp
+                    )
                 }
-                FilledTonalButton(onClick = onRefresh, contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Atualizar")
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape).background(
+                        if (diagnostics.captureActive && diagnostics.accessibilityConnected) Color(0xFFDCFCE7) else Color(0xFFF1F5F9)
+                    ), contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Radar, null, tint = if (diagnostics.captureActive) BrandGreen else MutedText)
                 }
             }
-            Surface(
-                color = if (diagnostics.success) Color(0xFFDCFCE7) else Color(0xFFFFF7ED),
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniStatus("Acessibilidade", diagnostics.accessibilityConnected)
+                MiniStatus("Captura", diagnostics.captureActive)
+                MiniStatus("99", diagnostics.appDetected == "99")
+            }
+            Spacer(Modifier.height(14.dp))
+            Button(
+                onClick = if (diagnostics.captureActive) onStopCapture else onRequestCapture,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = if (diagnostics.captureActive) Color(0xFFDC2626) else BrandBlue),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(
-                        imageVector = if (diagnostics.success) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
-                        contentDescription = null,
-                        tint = if (diagnostics.success) BrandGreen else Color(0xFFEA580C)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(diagnostics.message, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        if (diagnostics.summary.isNotBlank()) {
-                            Text(diagnostics.summary, color = MutedText, fontSize = 12.sp)
-                        }
-                        if (diagnostics.textCount > 0) {
-                            Text("${diagnostics.textCount} textos acessíveis encontrados", color = MutedText, fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HowItWorksCard() {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFEEF2FF)),
-        border = BorderStroke(1.dp, Color(0xFFC7D2FE))
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Info, contentDescription = null, tint = BrandBlue)
+                Icon(if (diagnostics.captureActive) Icons.Rounded.StopCircle else Icons.Rounded.PlayArrow, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Como o box funciona", fontWeight = FontWeight.ExtraBold)
+                Text(if (diagnostics.captureActive) "Desativar OCR" else "Ativar OCR", fontWeight = FontWeight.Bold)
             }
-            Text("• Vermelho: abaixo do mínimo da faixa ativa.", fontSize = 13.sp)
-            Text("• Amarelo: entre o mínimo e o valor ótimo.", fontSize = 13.sp)
-            Text("• Verde: igual ou acima do valor ótimo.", fontSize = 13.sp)
-            Text(
-                "O R$/hora e o lucro estimado aparecem como informação, mas a cor principal segue o R$/km configurado por você.",
-                color = MutedText,
-                fontSize = 12.sp
-            )
+            if (!diagnostics.accessibilityConnected) {
+                TextButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.AccessibilityNew, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Abrir Acessibilidade")
+                }
+            }
         }
-    }
-}
 
-@Composable
-private fun RulesScreen(
-    defaultMinimum: String,
-    defaultExcellent: String,
-    schedules: List<ScheduleDraft>,
-    onDefaultMinimumChange: (String) -> Unit,
-    onDefaultExcellentChange: (String) -> Unit,
-    onScheduleChange: (Int, ScheduleDraft) -> Unit,
-    onSave: () -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp, 14.dp, 16.dp, 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            SectionHeader(
-                "Regras por horário",
-                "Defina uma faixa padrão e aumente sua exigência nos horários de dinâmica."
-            )
+        CardBlock {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Regra ativa agora", color = MutedText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(active.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                }
+                Icon(Icons.Rounded.Schedule, null, tint = BrandBlue)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricBox("Mínimo", money(active.minimumPerKm), Color(0xFFFEE2E2), BrandRed, Modifier.weight(1f))
+                MetricBox("Média", money(active.middlePerKm), Color(0xFFFEF3C7), Color(0xFFD97706), Modifier.weight(1f))
+                MetricBox("Ótima", money(active.excellentPerKm), Color(0xFFDCFCE7), BrandGreen, Modifier.weight(1f))
+            }
         }
-        item {
-            RuleEditorCard(
-                title = "Faixa padrão",
-                subtitle = "Usada quando nenhum horário abaixo estiver ativo.",
-                minimum = defaultMinimum,
-                excellent = defaultExcellent,
-                onMinimumChange = onDefaultMinimumChange,
-                onExcellentChange = onDefaultExcellentChange
-            )
+
+        if (diagnostics.grossPerKm != null) {
+            CardBlock {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Última leitura", color = MutedText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("${money(diagnostics.grossPerKm)}/km", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                    }
+                    TextButton(onClick = onReader) { Text("Detalhes") }
+                }
+                Text("${money(diagnostics.grossPerHour ?: 0.0)}/h  •  ${formatTimeAgo(diagnostics.lastReadAt)}", color = MutedText, fontSize = 13.sp)
+            }
         }
-        items(schedules.size) { index ->
-            ScheduleEditorCard(
-                index = index,
-                draft = schedules[index],
-                onChange = { onScheduleChange(index, it) }
-            )
-        }
-        item {
-            RatingLegend(
-                defaultMinimum.toNumber(1.20),
-                defaultExcellent.toNumber(1.80)
-            )
-        }
-        item {
-            Button(
-                onClick = onSave,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
-            ) {
-                Icon(Icons.Rounded.Save, contentDescription = null)
+
+        CardBlock {
+            Text("Teste sem usar a 99", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Abra uma oferta simulada. O OCR captura a tela, reconhece valor/km/min e mostra o box flutuante.", color = MutedText, fontSize = 13.sp)
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onOpenSimulator, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Rounded.Science, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Salvar regras", fontWeight = FontWeight.Bold)
+                Text("Abrir laboratório OCR")
             }
         }
-    }
-}
 
-@Composable
-private fun RuleEditorCard(
-    title: String,
-    subtitle: String,
-    minimum: String,
-    excellent: String,
-    onMinimumChange: (String) -> Unit,
-    onExcellentChange: (String) -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(1.dp, BorderColor)
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-            Text(subtitle, color = MutedText, fontSize = 12.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DecimalField("Mínimo por km", minimum, Modifier.weight(1f), onMinimumChange)
-                DecimalField("Ótima a partir de", excellent, Modifier.weight(1f), onExcellentChange)
-            }
-            MiniRange(
-                minimum = minimum.toNumber(1.20),
-                excellent = excellent.toNumber(1.80)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ScheduleEditorCard(
-    index: Int,
-    draft: ScheduleDraft,
-    onChange: (ScheduleDraft) -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (draft.enabled) Color(0xFFF8FAFF) else CardSurface
-        ),
-        border = BorderStroke(1.dp, if (draft.enabled) Color(0xFFBFDBFE) else BorderColor)
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        CardBlock {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (draft.enabled) Color(0xFFDBEAFE) else Color(0xFFF1F5F9)
-                ) {
-                    Text(
-                        "${index + 1}",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = if (draft.enabled) BrandBlue else MutedText,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF0F172A)), contentAlignment = Alignment.Center) {
+                    Text("R", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp)
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(draft.name.ifBlank { "Horário ${index + 1}" }, fontWeight = FontWeight.ExtraBold)
-                    Text(if (draft.enabled) "Ativo" else "Desativado", color = if (draft.enabled) BrandGreen else MutedText, fontSize = 12.sp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Bolha flutuante", fontWeight = FontWeight.Bold)
+                    Text("Arraste pela tela e toque para abrir os atalhos.", color = MutedText, fontSize = 12.sp)
                 }
-                Switch(
-                    checked = draft.enabled,
-                    onCheckedChange = { onChange(draft.copy(enabled = it)) }
-                )
+                TextButton(onClick = onShowBubble) { Text("Mostrar") }
             }
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+}
 
-            OutlinedTextField(
-                value = draft.name,
-                onValueChange = { onChange(draft.copy(name = it.take(24))) },
-                label = { Text("Nome do horário") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
+@Composable
+private fun RulesScreen(settings: DriverSettings, onSettingsChanged: (DriverSettings) -> Unit, onSave: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Regras por horário", "A cor do box é definida pelo R$/km da faixa ativa.")
+        CardBlock {
+            Text("Fora dos horários especiais", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TimeField("Início", draft.start, Modifier.weight(1f)) {
-                    onChange(draft.copy(start = it))
+                DecimalField("Mínimo R$/km", settings.defaultMinimumPerKm, Modifier.weight(1f)) {
+                    onSettingsChanged(settings.copy(defaultMinimumPerKm = it))
                 }
-                TimeField("Fim", draft.end, Modifier.weight(1f)) {
-                    onChange(draft.copy(end = it))
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DecimalField("Mínimo por km", draft.minimum, Modifier.weight(1f)) {
-                    onChange(draft.copy(minimum = it))
-                }
-                DecimalField("Ótima a partir de", draft.excellent, Modifier.weight(1f)) {
-                    onChange(draft.copy(excellent = it))
+                DecimalField("Ótima R$/km", settings.defaultExcellentPerKm, Modifier.weight(1f)) {
+                    onSettingsChanged(settings.copy(defaultExcellentPerKm = it))
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Legend(settings.defaultMinimumPerKm, settings.defaultExcellentPerKm)
+        }
 
-            MiniRange(
-                minimum = draft.minimum.toNumber(1.40),
-                excellent = draft.excellent.toNumber(2.00)
-            )
-
-            if (draft.enabled && draft.start.toMinuteOfDay(-1) == draft.end.toMinuteOfDay(-2)) {
-                Text("O início e o fim não podem ser iguais.", color = BrandRed, fontSize = 12.sp)
+        settings.scheduledThresholds.forEachIndexed { index, schedule ->
+            ScheduleCard(schedule) { updated ->
+                val list = settings.scheduledThresholds.toMutableList()
+                list[index] = updated
+                onSettingsChanged(settings.copy(scheduledThresholds = list))
             }
         }
+        Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
+            Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar regras", fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(6.dp))
     }
 }
 
 @Composable
-private fun MiniRange(minimum: Double, excellent: Double) {
-    val lower = min(minimum, excellent)
-    val upper = max(minimum, excellent)
-    val middle = RideCalculator.middleReference(lower, upper)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFF1F5F9))
-            .padding(10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        SmallRangeValue("Ruim", "< ${money(lower)}", BrandRed)
-        SmallRangeValue("Média", money(middle), BrandAmber)
-        SmallRangeValue("Ótima", "≥ ${money(upper)}", BrandGreen)
-    }
-}
-
-@Composable
-private fun SmallRangeValue(label: String, value: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        Text(value, color = SlateText, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-    }
-}
-
-@Composable
-private fun RatingLegend(minimum: Double, excellent: Double) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
-        border = BorderStroke(1.dp, Color(0xFFFDE68A))
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("Como a média é calculada", fontWeight = FontWeight.ExtraBold)
-            Text(
-                "O valor central é a média entre o mínimo e o ótimo: ${money(RideCalculator.middleReference(minimum, excellent))}/km.",
-                fontSize = 13.sp
-            )
-            Text(
-                "Quando horários se sobrepõem, o primeiro horário ativo da lista é usado.",
-                color = MutedText,
-                fontSize = 12.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun SimulatorScreen(settings: DriverSettings) {
-    var fare by remember { mutableStateOf("8,40") }
-    var pickupKm by remember { mutableStateOf("2,0") }
-    var tripKm by remember { mutableStateOf("2,3") }
-    var pickupMinutes by remember { mutableStateOf("6") }
-    var tripMinutes by remember { mutableStateOf("5") }
-    var result by remember {
-        mutableStateOf(
-            RideCalculator.calculate(
-                RideOffer(8.40, 2.0, 2.3, 6, 5, surgeMultiplier = 1.6, productName = "Moto"),
-                settings
-            )
-        )
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp, 14.dp, 16.dp, 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            SectionHeader("Simulador", "Teste uma oferta antes de usar o leitor automático.")
-        }
-        item {
-            ResultPreviewCard(result)
-        }
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                border = BorderStroke(1.dp, BorderColor)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Dados da oferta", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                    DecimalField("Valor total", fare, Modifier.fillMaxWidth()) { fare = it }
-                    Text("Até buscar o passageiro", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DecimalField("Distância (km)", pickupKm, Modifier.weight(1f)) { pickupKm = it }
-                        IntegerField("Tempo (min)", pickupMinutes, Modifier.weight(1f)) { pickupMinutes = it }
-                    }
-                    Text("Corrida com o passageiro", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DecimalField("Distância (km)", tripKm, Modifier.weight(1f)) { tripKm = it }
-                        IntegerField("Tempo (min)", tripMinutes, Modifier.weight(1f)) { tripMinutes = it }
-                    }
-                    Button(
-                        onClick = {
-                            result = RideCalculator.calculate(
-                                RideOffer(
-                                    fare = fare.toNumber(0.0),
-                                    pickupDistanceKm = pickupKm.toNumber(0.0),
-                                    tripDistanceKm = tripKm.toNumber(0.0),
-                                    pickupMinutes = pickupMinutes.toIntOrNull() ?: 0,
-                                    tripMinutes = tripMinutes.toIntOrNull() ?: 0,
-                                    productName = "Moto"
-                                ),
-                                settings
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
-                    ) {
-                        Icon(Icons.Rounded.Calculate, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Calcular corrida", fontWeight = FontWeight.Bold)
-                    }
-                }
+private fun ScheduleCard(schedule: ScheduledKmThreshold, onChange: (ScheduledKmThreshold) -> Unit) {
+    CardBlock {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(schedule.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(if (schedule.enabled) "Ativa no horário definido" else "Desativada", color = MutedText, fontSize = 12.sp)
             }
+            Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) })
         }
-        item {
-            CostBreakdownCard(result)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TimeField("Início", schedule.startMinuteOfDay, Modifier.weight(1f)) { onChange(schedule.copy(startMinuteOfDay = it)) }
+            TimeField("Fim", schedule.endMinuteOfDay, Modifier.weight(1f)) { onChange(schedule.copy(endMinuteOfDay = it)) }
         }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DecimalField("Mínimo", schedule.minimumPerKm, Modifier.weight(1f)) { onChange(schedule.copy(minimumPerKm = it)) }
+            DecimalField("Ótima", schedule.excellentPerKm, Modifier.weight(1f)) { onChange(schedule.copy(excellentPerKm = it)) }
+        }
+        Spacer(Modifier.height(8.dp))
+        Legend(schedule.minimumPerKm, schedule.excellentPerKm)
     }
 }
 
 @Composable
-private fun ResultPreviewCard(result: RideResult) {
-    val accent = ratingColor(result.rating)
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(3.dp, accent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
-    ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = accent, shape = RoundedCornerShape(99.dp)) {
-                    Text(
-                        ratingLabel(result.rating),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        color = Color.White,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp
-                    )
-                }
-                Spacer(Modifier.width(9.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("RotaLucro", fontWeight = FontWeight.ExtraBold)
-                    Text(result.activeThreshold.name, color = MutedText, fontSize = 11.sp)
-                }
-                Text("BOX", color = MutedText, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-            }
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                OverlayMetric(money(result.grossPerKm), "POR KM", accent, Modifier.weight(1f))
-                OverlayMetric(money(result.grossPerHour), "POR HORA", SlateText, Modifier.weight(1f))
-                OverlayMetric(
-                    money(result.estimatedProfit),
-                    "LUCRO EST.",
-                    if (result.estimatedProfit >= 0) BrandGreen else BrandRed,
-                    Modifier.weight(1f)
-                )
-            }
-
-            HorizontalDivider(color = BorderColor)
-            Text(
-                "${money(result.fare)}  •  ${result.totalDistanceKm.oneDecimal()} km  •  ${result.totalMinutes} min",
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 13.sp
-            )
-            Text(
-                "Ruim < ${money(result.activeThreshold.minimumPerKm)}  •  Média até ${money(result.activeThreshold.excellentPerKm)}  •  Ótima ≥ ${money(result.activeThreshold.excellentPerKm)}",
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                color = MutedText,
-                fontSize = 10.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun OverlayMetric(
-    value: String,
-    label: String,
-    color: Color,
-    modifier: Modifier = Modifier
+private fun ReaderScreen(
+    diagnostics: OcrDiagnostics,
+    onRequestCapture: () -> Unit,
+    onStopCapture: () -> Unit,
+    onScanNow: () -> Unit,
+    onOpenSimulator: () -> Unit
 ) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, maxLines = 1)
-        Text(label, color = MutedText, fontWeight = FontWeight.Bold, fontSize = 9.sp)
-    }
-}
-
-@Composable
-private fun CostBreakdownCard(result: RideResult) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(1.dp, BorderColor)
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.DirectionsCar, contentDescription = null, tint = BrandBlue)
-                Spacer(Modifier.width(8.dp))
-                Text("Estimativa de custos", fontWeight = FontWeight.ExtraBold)
-            }
-            DetailRow("Combustível", money(result.fuelCost))
-            DetailRow("Manutenção", money(result.maintenanceCost))
-            HorizontalDivider(color = BorderColor)
-            DetailRow("Custo total", money(result.estimatedCost), bold = true)
-            DetailRow("Lucro estimado", money(result.estimatedProfit), bold = true, valueColor = if (result.estimatedProfit >= 0) BrandGreen else BrandRed)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Diagnóstico do leitor", "Veja exatamente onde a leitura está funcionando ou falhando.")
+        CardBlock {
+            DiagnosticLine("Leitor conectado", diagnostics.accessibilityConnected)
+            DiagnosticLine("Captura de tela", diagnostics.captureActive)
+            DiagnosticLine("OCR processando", diagnostics.ocrRunning, neutralWhenFalse = true)
+            DiagnosticLine("App detectado: ${diagnostics.appDetected}", diagnostics.appDetected == "99" || diagnostics.appDetected == "Simulador", neutralWhenFalse = true)
+            Divider(Modifier.padding(vertical = 10.dp))
+            Text("Linhas encontradas: ${diagnostics.recognizedLineCount}", fontWeight = FontWeight.SemiBold)
+            Text(diagnostics.reason, color = MutedText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         }
+
+        CardBlock {
+            Text("TEXTOS ÚTEIS RECONHECIDOS", color = MutedText, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+            Spacer(Modifier.height(8.dp))
+            if (diagnostics.usefulTexts.isEmpty()) {
+                Text("Nenhum ainda.", color = MutedText)
+            } else {
+                diagnostics.usefulTexts.forEach { Text(it, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 13.sp, modifier = Modifier.padding(vertical = 2.dp)) }
+            }
+        }
+
+        CardBlock {
+            ParseLine("VALOR", diagnostics.fare?.let(::money))
+            ParseLine("COLETA", if (diagnostics.pickupKm != null && diagnostics.pickupMin != null) "${one(diagnostics.pickupKm)} km / ${diagnostics.pickupMin} min" else null)
+            ParseLine("VIAGEM", if (diagnostics.tripKm != null && diagnostics.tripMin != null) "${one(diagnostics.tripKm)} km / ${diagnostics.tripMin} min" else null)
+            ParseLine("RESULTADO", diagnostics.grossPerKm?.let { "${money(it)}/km" })
+            ParseLine("R$/HORA", diagnostics.grossPerHour?.let { "${money(it)}/h" })
+            ParseLine("BOX", if (diagnostics.boxDisplayed) "Exibido" else null)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = if (diagnostics.captureActive) onStopCapture else onRequestCapture, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) {
+                Text(if (diagnostics.captureActive) "Parar OCR" else "Ativar OCR")
+            }
+            OutlinedButton(onClick = onScanNow, enabled = diagnostics.captureActive, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) {
+                Text("Ler agora")
+            }
+        }
+        OutlinedButton(onClick = onOpenSimulator, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            Icon(Icons.Rounded.Science, null); Spacer(Modifier.width(7.dp)); Text("Testar com oferta simulada")
+        }
+        Spacer(Modifier.height(6.dp))
     }
 }
 
 @Composable
 private fun SettingsScreen(
-    fuelPrice: String,
-    kmPerLiter: String,
-    maintenancePerKm: String,
-    overlayTimeout: String,
-    onFuelPriceChange: (String) -> Unit,
-    onKmPerLiterChange: (String) -> Unit,
-    onMaintenanceChange: (String) -> Unit,
-    onOverlayTimeoutChange: (String) -> Unit,
-    onSave: () -> Unit
+    settings: DriverSettings,
+    onSettingsChanged: (DriverSettings) -> Unit,
+    onSave: () -> Unit,
+    onOpenAccessibility: () -> Unit,
+    onShowBubble: () -> Unit,
+    onHideBubble: () -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp, 14.dp, 16.dp, 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            SectionHeader("Ajustes", "Personalize os custos e o tempo de exibição do box.")
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Custos e sistema", "Ajuste os custos para melhorar a estimativa de lucro.")
+        CardBlock {
+            Text("Custos do veículo", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Spacer(Modifier.height(10.dp))
+            DecimalField("Combustível R$/L", settings.fuelPricePerLiter, Modifier.fillMaxWidth()) { onSettingsChanged(settings.copy(fuelPricePerLiter = it)) }
+            Spacer(Modifier.height(9.dp))
+            DecimalField("Consumo km/L", settings.vehicleKmPerLiter, Modifier.fillMaxWidth()) { onSettingsChanged(settings.copy(vehicleKmPerLiter = it)) }
+            Spacer(Modifier.height(9.dp))
+            DecimalField("Manutenção R$/km", settings.maintenancePerKm, Modifier.fillMaxWidth()) { onSettingsChanged(settings.copy(maintenancePerKm = it)) }
         }
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                border = BorderStroke(1.dp, BorderColor)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.DirectionsCar, contentDescription = null, tint = BrandBlue)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Custos da moto", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                    }
-                    DecimalField("Preço do combustível por litro", fuelPrice, Modifier.fillMaxWidth(), onFuelPriceChange)
-                    DecimalField("Consumo médio (km/l)", kmPerLiter, Modifier.fillMaxWidth(), onKmPerLiterChange)
-                    DecimalField("Manutenção por km", maintenancePerKm, Modifier.fillMaxWidth(), onMaintenanceChange)
-                    Text(
-                        "O lucro estimado desconta combustível e manutenção de todos os quilômetros da oferta.",
-                        color = MutedText,
-                        fontSize = 12.sp
-                    )
-                }
+        CardBlock {
+            Text("Box de resultado", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Spacer(Modifier.height(10.dp))
+            IntField("Ocultar após (segundos)", settings.overlayAutoHideSeconds, Modifier.fillMaxWidth(), 8..45) {
+                onSettingsChanged(settings.copy(overlayAutoHideSeconds = it))
             }
         }
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                border = BorderStroke(1.dp, BorderColor)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Comportamento do box", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                    IntegerField(
-                        "Ocultar automaticamente após (8 a 45 segundos)",
-                        overlayTimeout,
-                        Modifier.fillMaxWidth(),
-                        onOverlayTimeoutChange
-                    )
-                    Text(
-                        "O box aparece no topo para não cobrir o botão Aceitar da 99 e pode ser fechado no ×.",
-                        color = MutedText,
-                        fontSize = 12.sp
-                    )
-                }
+        CardBlock {
+            Text("Permissões e bolha", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Spacer(Modifier.height(8.dp))
+            Text("A acessibilidade só identifica qual app está em primeiro plano e desenha a bolha/box. Os valores da corrida são lidos pelo OCR local.", color = MutedText, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) { Text("Abrir Acessibilidade") }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onShowBubble, modifier = Modifier.weight(1f)) { Text("Mostrar bolha") }
+                OutlinedButton(onClick = onHideBubble, modifier = Modifier.weight(1f)) { Text("Ocultar bolha") }
             }
         }
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFEEF2FF)),
-                border = BorderStroke(1.dp, Color(0xFFC7D2FE))
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Info, contentDescription = null, tint = BrandBlue)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Privacidade e segurança", fontWeight = FontWeight.ExtraBold)
-                    }
-                    Text(
-                        "O RotaLucro usa a acessibilidade somente para identificar valor, tempo e distância na oferta da 99.",
-                        fontSize = 13.sp
-                    )
-                    Text(
-                        "Ele não toca no botão Aceitar, não recusa corridas e não salva endereços, nomes ou avaliações.",
-                        color = MutedText,
-                        fontSize = 12.sp
-                    )
-                }
-            }
+        Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
+            Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar ajustes", fontWeight = FontWeight.Bold)
         }
-        item {
-            Button(
-                onClick = onSave,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
-            ) {
-                Icon(Icons.Rounded.Save, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Salvar ajustes", fontWeight = FontWeight.Bold)
-            }
-        }
-        item {
-            Text(
-                "RotaLucro 0.4.0 • versão de testes",
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                color = MutedText,
-                fontSize = 11.sp
-            )
+        Text("Privacidade: o app não salva capturas de tela. O OCR é processado localmente e o diagnóstico guarda apenas números/textos úteis da oferta, não endereços.", color = MutedText, fontSize = 11.sp)
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CardBlock(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        content = { Column(Modifier.padding(16.dp), content = content) }
+    )
+}
+
+@Composable
+private fun SectionTitle(title: String, subtitle: String) {
+    Column {
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        Text(subtitle, color = MutedText, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun MiniStatus(label: String, ok: Boolean) {
+    Surface(shape = RoundedCornerShape(12.dp), color = if (ok) Color(0xFFECFDF5) else Color(0xFFF1F5F9)) {
+        Row(Modifier.padding(horizontal = 9.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(if (ok) BrandGreen else Color(0xFF94A3B8)))
+            Spacer(Modifier.width(5.dp))
+            Text(label, fontSize = 11.sp, color = if (ok) Color(0xFF166534) else MutedText, maxLines = 1)
         }
     }
 }
 
 @Composable
-private fun DetailRow(
-    label: String,
-    value: String,
-    bold: Boolean = false,
-    valueColor: Color = SlateText
-) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text(label, modifier = Modifier.weight(1f), color = if (bold) SlateText else MutedText, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
-        Text(value, color = valueColor, fontWeight = if (bold) FontWeight.ExtraBold else FontWeight.SemiBold)
+private fun MetricBox(label: String, value: String, bg: Color, fg: Color, modifier: Modifier) {
+    Box(modifier.clip(RoundedCornerShape(14.dp)).background(bg).padding(vertical = 10.dp, horizontal = 8.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, color = fg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(value, color = fg, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
 @Composable
-private fun SectionHeader(title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = SlateText)
-        Text(subtitle, color = MutedText, fontSize = 13.sp, lineHeight = 18.sp)
+private fun Legend(min: Double, excellent: Double) {
+    val middle = (min + excellent) / 2.0
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LegendChip("< ${money(min)}", "Ruim", Color(0xFFFEE2E2), BrandRed, Modifier.weight(1f))
+        LegendChip("${money(min)}–${money(excellent)}", "Média", Color(0xFFFEF3C7), Color(0xFFD97706), Modifier.weight(1f))
+        LegendChip("≥ ${money(excellent)}", "Ótima", Color(0xFFDCFCE7), BrandGreen, Modifier.weight(1f))
+    }
+    Text("Referência central: ${money(middle)}/km", color = MutedText, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+}
+
+@Composable
+private fun LegendChip(range: String, label: String, bg: Color, fg: Color, modifier: Modifier) {
+    Column(modifier.clip(RoundedCornerShape(10.dp)).background(bg).padding(7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = fg, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(range, color = fg, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun DecimalField(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    onValueChange: (String) -> Unit
-) {
+private fun DiagnosticLine(label: String, ok: Boolean, neutralWhenFalse: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = 14.sp)
+        Text(
+            if (ok) "✓" else if (neutralWhenFalse) "—" else "✕",
+            color = if (ok) BrandGreen else if (neutralWhenFalse) MutedText else BrandRed,
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp
+        )
+    }
+}
+
+@Composable
+private fun ParseLine(label: String, value: String?) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = MutedText, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(78.dp))
+        Text(value ?: "Não reconhecido", Modifier.weight(1f), fontWeight = if (value != null) FontWeight.SemiBold else FontWeight.Normal, fontSize = 14.sp)
+        Text(if (value != null) "✓" else "✕", color = if (value != null) BrandGreen else BrandRed, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, color: Color) {
+    Surface(shape = RoundedCornerShape(100.dp), color = color.copy(alpha = .18f)) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(6.dp))
+            Text(text, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun DecimalField(label: String, value: Double, modifier: Modifier, onValue: (Double) -> Unit) {
+    var text by remember(value) { mutableStateOf(two(value)) }
     OutlinedTextField(
-        value = value,
-        onValueChange = { newValue ->
-            onValueChange(newValue.filter { it.isDigit() || it == ',' || it == '.' })
-        },
-        label = { Text(label, fontSize = 12.sp) },
+        value = text,
+        onValueChange = { text = it.filter { ch -> ch.isDigit() || ch == ',' || ch == '.' }.take(7) },
+        label = { Text(label) },
+        singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        modifier = modifier
-    )
-}
-
-@Composable
-private fun IntegerField(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    onValueChange: (String) -> Unit
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { onValueChange(it.filter(Char::isDigit).take(3)) },
-        label = { Text(label, fontSize = 12.sp) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        modifier = modifier
-    )
-}
-
-@Composable
-private fun TimeField(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    onValueChange: (String) -> Unit
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { newValue ->
-            onValueChange(newValue.filter { it.isDigit() || it == ':' }.take(5))
+        modifier = modifier.onFocusChanged { state ->
+            if (!state.isFocused) {
+                text.replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 }?.let(onValue)
+                text = two(text.replace(',', '.').toDoubleOrNull() ?: value)
+            }
         },
-        label = { Text(label, fontSize = 12.sp) },
-        placeholder = { Text("18:00") },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        modifier = modifier
+        shape = RoundedCornerShape(13.dp)
     )
 }
 
-private fun ratingColor(rating: OfferRating): Color = when (rating) {
-    OfferRating.GOOD -> BrandGreen
-    OfferRating.ATTENTION -> BrandAmber
-    OfferRating.BAD -> BrandRed
+@Composable
+private fun IntField(label: String, value: Int, modifier: Modifier, range: IntRange, onValue: (Int) -> Unit) {
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it.filter(Char::isDigit).take(3) },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier.onFocusChanged { state ->
+            if (!state.isFocused) {
+                val parsed = text.toIntOrNull()?.coerceIn(range) ?: value
+                onValue(parsed); text = parsed.toString()
+            }
+        },
+        shape = RoundedCornerShape(13.dp)
+    )
 }
 
-private fun ratingLabel(rating: OfferRating): String = when (rating) {
-    OfferRating.GOOD -> "ÓTIMA"
-    OfferRating.ATTENTION -> "MÉDIA"
-    OfferRating.BAD -> "RUIM"
+@Composable
+private fun TimeField(label: String, minutes: Int, modifier: Modifier, onValue: (Int) -> Unit) {
+    var text by remember(minutes) { mutableStateOf(formatMinutes(minutes)) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it.filter { ch -> ch.isDigit() || ch == ':' }.take(5) },
+        label = { Text(label) },
+        singleLine = true,
+        modifier = modifier.onFocusChanged { state ->
+            if (!state.isFocused) {
+                val parsed = parseTime(text)
+                if (parsed != null) onValue(parsed)
+                text = formatMinutes(parsed ?: minutes)
+            }
+        },
+        shape = RoundedCornerShape(13.dp)
+    )
 }
 
-private fun String.toNumber(default: Double): Double =
-    trim().replace(",", ".").toDoubleOrNull() ?: default
-
-private fun String.toMinuteOfDay(default: Int): Int {
-    val value = trim()
-    val parts = when {
-        value.contains(':') -> value.split(':', limit = 2)
-        value.length in 3..4 -> listOf(value.dropLast(2), value.takeLast(2))
-        else -> return default
-    }
-    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return default
-    val minute = parts.getOrNull(1)?.toIntOrNull() ?: return default
-    if (hour !in 0..23 || minute !in 0..59) return default
-    return hour * 60 + minute
+private fun isAccessibilityEnabled(context: Context): Boolean {
+    val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+    return enabled.contains(context.packageName, ignoreCase = true)
 }
 
-private fun Int.asTimeInput(): String {
-    val safe = coerceIn(0, 1439)
-    return String.format(Locale("pt", "BR"), "%02d:%02d", safe / 60, safe % 60)
+private fun formatMinutes(minuteOfDay: Int): String = "%02d:%02d".format((minuteOfDay / 60) % 24, minuteOfDay % 60)
+private fun parseTime(value: String): Int? {
+    val parts = value.split(':')
+    if (parts.size != 2) return null
+    val h = parts[0].toIntOrNull() ?: return null
+    val m = parts[1].toIntOrNull() ?: return null
+    if (h !in 0..23 || m !in 0..59) return null
+    return h * 60 + m
 }
-
-private fun Double.asInput(): String = String.format(Locale("pt", "BR"), "%.2f", this)
-private fun Double.oneDecimal(): String = String.format(Locale("pt", "BR"), "%.1f", this)
-private fun money(value: Double): String = NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(value)
+private fun money(value: Double): String = "R$ ${two(value)}"
+private fun two(value: Double): String = "%.2f".format(Locale.US, value).replace('.', ',')
+private fun one(value: Double): String = "%.1f".format(Locale.US, value).replace('.', ',')
+private fun formatTimeAgo(timestamp: Long): String {
+    if (timestamp <= 0L) return "sem leitura"
+    val delta = System.currentTimeMillis() - timestamp
+    return if (delta < 60_000L) "agora" else SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date(timestamp))
+}

@@ -120,4 +120,22 @@ class RideCalculatorTest {
     fun middleReferenceUsesMinimumAndExcellent() {
         assertEquals(1.50, RideCalculator.middleReference(1.20, 1.80), 0.001)
     }
+    @Test
+    fun diagnosticsKeepPartialValuesWhenRouteIsIncomplete() {
+        val attempt = OfferParser.parseWithDiagnostics(
+            listOf(
+                "Moto",
+                "R$8,40",
+                "6min (2km)",
+                "Aceitar"
+            )
+        )
+
+        assertEquals(null, attempt.offer)
+        assertEquals(8.40, attempt.fare ?: 0.0, 0.001)
+        assertNotNull(attempt.pickupSegment)
+        assertEquals(null, attempt.tripSegment)
+        assertTrue(attempt.normalizedTexts.contains("R$8,40"))
+    }
+
 }

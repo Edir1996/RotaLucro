@@ -29,7 +29,12 @@ object OfferParser {
             .toList()
 
         if (normalized.isEmpty()) {
-            return ParseAttempt(null, "Nenhum texto acessível foi encontrado na tela.", 0)
+            return ParseAttempt(
+                offer = null,
+                reason = "Nenhum texto acessível foi encontrado na tela.",
+                normalizedTextCount = 0,
+                normalizedTexts = emptyList()
+            )
         }
 
         val joined = normalized.joinToString(" • ")
@@ -38,18 +43,13 @@ object OfferParser {
             .filter { it.value > 0.0 }
             .maxWithOrNull(compareBy<MoneyCandidate> { it.score }.thenBy { it.value })
             ?.value
-            ?: return ParseAttempt(
-                null,
-                "A tela foi lida, mas o valor total da oferta não foi reconhecido.",
-                normalized.size
-            )
 
         val segments = normalized.flatMap { text ->
             segmentRegex.findAll(text).mapNotNull { match ->
                 val minutes = match.groupValues.getOrNull(1)?.toIntOrNull()
                 val distance = match.groupValues.getOrNull(2)?.toBrazilianDouble()
                 if (minutes != null && minutes in 1..600 && distance != null && distance in 0.1..500.0) {
-                    RouteSegment(minutes, distance)
+                    DetectedRouteSegment(minutes, distance)
                 } else {
                     null
                 }
@@ -68,28 +68,18 @@ object OfferParser {
             }.toList()
         }.filter { it in 1..600 }
 
-        val pickupDistance: Double
-        val tripDistance: Double
-        val pickupMinutes: Int
-        val tripMinutes: Int
+        val pickupSegment: DetectedRouteSegment?
+        val tripSegment: DetectedRouteSegment?
 
         if (segments.size >= 2) {
-            pickupMinutes = segments[0].minutes
-            pickupDistance = segments[0].distanceKm
-            tripMinutes = segments[1].minutes
-            tripDistance = segments[1].distanceKm
+            pickupSegment = segments[0]
+            tripSegment = segments[1]
+        } else if (distances.size >= 2 && minutes.size >= 2) {
+            pickupSegment = DetectedRouteSegment(minutes[0], distances[0])
+            tripSegment = DetectedRouteSegment(minutes[1], distances[1])
         } else {
-            if (distances.size < 2 || minutes.size < 2) {
-                return ParseAttempt(
-                    null,
-                    "Valor reconhecido, mas faltaram os dois tempos e as duas distâncias da oferta.",
-                    normalized.size
-                )
-            }
-            pickupDistance = distances[0]
-            tripDistance = distances[1]
-            pickupMinutes = minutes[0]
-            tripMinutes = minutes[1]
+            pickupSegment = segments.getOrNull(0)
+            tripSegment = segments.getOrNull(1)
         }
 
         val surgeMultiplier = multiplierRegex.find(joined)
@@ -107,20 +97,58 @@ object OfferParser {
             compact == "moto" || compact == "99moto" || compact == "99pop" || compact == "pop"
         }
 
-        return ParseAttempt(
-            offer = RideOffer(
-                fare = fare,
-                pickupDistanceKm = pickupDistance,
-                tripDistanceKm = tripDistance,
-                pickupMinutes = pickupMinutes,
-                tripMinutes = tripMinutes,
+        if (fare == null) {
+            return ParseAttempt(
+                offer = null,
+                reason = "A tela foi lida, mas o valor total da oferta não foi reconhecido.",
+                normalizedTextCount = normalized.size,
+                normalizedTexts = normalized,
+                pickupSegment = pickupSegment,
+                tripSegment = tripSegment,
                 surgeMultiplier = surgeMultiplier,
                 dynamicBaseFare = dynamicBaseFare,
-                productName = productName,
-                sourceText = normalized
-            ),
+                productName = productName
+            )
+        }
+
+        if (pickupSegment == null || tripSegment == null) {
+            return ParseAttempt(
+                offer = null,
+                reason = "Valor reconhecido, mas faltaram os dois tempos e as duas distâncias da oferta.",
+                normalizedTextCount = normalized.size,
+                normalizedTexts = normalized,
+                fare = fare,
+                pickupSegment = pickupSegment,
+                tripSegment = tripSegment,
+                surgeMultiplier = surgeMultiplier,
+                dynamicBaseFare = dynamicBaseFare,
+                productName = productName
+            )
+        }
+
+        val offer = RideOffer(
+            fare = fare,
+            pickupDistanceKm = pickupSegment.distanceKm,
+            tripDistanceKm = tripSegment.distanceKm,
+            pickupMinutes = pickupSegment.minutes,
+            tripMinutes = tripSegment.minutes,
+            surgeMultiplier = surgeMultiplier,
+            dynamicBaseFare = dynamicBaseFare,
+            productName = productName,
+            sourceText = normalized
+        )
+
+        return ParseAttempt(
+            offer = offer,
             reason = "Oferta reconhecida com sucesso.",
-            normalizedTextCount = normalized.size
+            normalizedTextCount = normalized.size,
+            normalizedTexts = normalized,
+            fare = fare,
+            pickupSegment = pickupSegment,
+            tripSegment = tripSegment,
+            surgeMultiplier = surgeMultiplier,
+            dynamicBaseFare = dynamicBaseFare,
+            productName = productName
         )
     }
 
@@ -196,6 +224,5 @@ object OfferParser {
         }
     }
 
-    private data class RouteSegment(val minutes: Int, val distanceKm: Double)
     private data class MoneyCandidate(val value: Double, val score: Int)
 }
