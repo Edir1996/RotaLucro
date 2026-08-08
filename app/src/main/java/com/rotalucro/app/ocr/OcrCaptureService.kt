@@ -28,6 +28,7 @@ import com.rotalucro.app.MainActivity
 import com.rotalucro.app.R
 import com.rotalucro.app.calculator.RideCalculator
 import com.rotalucro.app.data.OcrDiagnosticsStore
+import com.rotalucro.app.data.LastRideStore
 import com.rotalucro.app.data.SettingsStore
 import com.rotalucro.app.runtime.RuntimeState
 import java.util.concurrent.atomic.AtomicBoolean
@@ -127,8 +128,11 @@ class OcrCaptureService : Service() {
 
     private fun onImageAvailable(reader: ImageReader) {
         val now = System.currentTimeMillis()
-        val shouldScan = forceOneScan || RuntimeState.is99Visible || RuntimeState.simulatorVisible
-        if (!shouldScan || now - lastScanAt < 950L || processing.get()) {
+        // Mantemos o OCR vivo enquanto a sessão de captura estiver ativa. Antes ele dependia
+        // de RuntimeState.is99Visible; eventos de SystemUI/teclado/overlay podiam marcar a 99
+        // como "não visível" e interromper as leituras depois de algumas ofertas.
+        val shouldScan = forceOneScan || RuntimeState.captureActive
+        if (!shouldScan || now - lastScanAt < 1100L || processing.get()) {
             reader.acquireLatestImage()?.close()
             return
         }
@@ -187,7 +191,8 @@ class OcrCaptureService : Service() {
 
     private fun handleOcr(lines: List<OcrLine>) {
         val parsed = OcrOfferParser.parse(lines)
-        val result = parsed.offer?.let { RideCalculator.calculate(it, SettingsStore.load(this)) }
+        val likely99Offer = RuntimeState.is99Visible || RuntimeState.simulatorVisible || parsed.usefulTexts.any { it.contains("Aceitar", ignoreCase = true) }
+        val result = if (likely99Offer) parsed.offer?.let { RideCalculator.calculate(it, SettingsStore.load(this)) } else null
         var showBox = false
 
         if (result != null) {
@@ -200,7 +205,9 @@ class OcrCaptureService : Service() {
                 showBox = true
                 RideOverlayBus.publish(this, result)
             }
-            updateNotification("${formatMoney(result.grossPerKm)}/km • ${ratingName(result.rating)}")
+            LastRideStore.save(this, result)
+            val metric = if (result.possibleEmptyReturn) result.analysisPerKm else result.grossPerKm
+            updateNotification("${formatMoney(metric)}/km • ${ratingName(result.rating)}${if (result.possibleEmptyReturn) " • retorno vazio" else ""}")
         } else {
             misses++
             if (misses >= 3) lastSignature = ""

@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.rotalucro.app.accessibility.RideAccessibilityService
 import com.rotalucro.app.ocr.OcrCaptureService
+import com.rotalucro.app.ocr.RideOverlayBus
 import com.rotalucro.app.runtime.RuntimeState
 import com.rotalucro.app.ui.RotaLucroApp
 import com.rotalucro.app.ui.theme.RotaLucroTheme
@@ -44,7 +45,8 @@ class MainActivity : ComponentActivity() {
                     onOpenAccessibility = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                     onShowBubble = { sendBroadcast(Intent(RideAccessibilityService.ACTION_SHOW_BUBBLE).setPackage(packageName)) },
                     onHideBubble = { sendBroadcast(Intent(RideAccessibilityService.ACTION_HIDE_BUBBLE).setPackage(packageName)) },
-                    onOpenSimulator = { startActivity(Intent(this, TestOfferActivity::class.java)) }
+                    onOpenSimulator = { startActivity(Intent(this, TestOfferActivity::class.java)) },
+                    onPreviewBox = { RideOverlayBus.publishPreview(this) }
                 )
             }
         }

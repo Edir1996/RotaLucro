@@ -21,16 +21,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rotalucro.app.R
 import com.rotalucro.app.calculator.DriverSettings
 import com.rotalucro.app.calculator.RideCalculator
 import com.rotalucro.app.calculator.ScheduledKmThreshold
 import com.rotalucro.app.data.OcrDiagnostics
 import com.rotalucro.app.data.OcrDiagnosticsStore
+import com.rotalucro.app.data.RideHistoryStore
 import com.rotalucro.app.data.SettingsStore
 import com.rotalucro.app.runtime.RuntimeState
 import com.rotalucro.app.ui.theme.*
@@ -42,6 +45,8 @@ import java.util.Locale
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Início", Icons.Rounded.Home),
     RULES("Regras", Icons.Rounded.Tune),
+    RIDES("Corridas", Icons.Rounded.ReceiptLong),
+    BOX("Box", Icons.Rounded.DashboardCustomize),
     READER("Leitor", Icons.Rounded.Visibility),
     SETTINGS("Ajustes", Icons.Rounded.Settings)
 }
@@ -54,17 +59,20 @@ fun RotaLucroApp(
     onOpenAccessibility: () -> Unit,
     onShowBubble: () -> Unit,
     onHideBubble: () -> Unit,
-    onOpenSimulator: () -> Unit
+    onOpenSimulator: () -> Unit,
+    onPreviewBox: () -> Unit
 ) {
     val context = LocalContext.current
     var tab by remember { mutableStateOf(Tab.HOME) }
     var diagnostics by remember { mutableStateOf(OcrDiagnosticsStore.load(context)) }
     var settings by remember { mutableStateOf(SettingsStore.load(context)) }
+    var history by remember { mutableStateOf(RideHistoryStore.load(context)) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         while (true) {
             diagnostics = OcrDiagnosticsStore.load(context)
+            history = RideHistoryStore.load(context)
             delay(850L)
         }
     }
@@ -79,7 +87,7 @@ fun RotaLucroApp(
         containerColor = AppBackground,
         bottomBar = {
             NavigationBar(containerColor = Color.White, tonalElevation = 10.dp) {
-                Tab.entries.forEach { item ->
+                Tab.entries.filter { it != Tab.READER }.forEach { item ->
                     NavigationBarItem(
                         selected = tab == item,
                         onClick = { tab = item },
@@ -125,6 +133,17 @@ fun RotaLucroApp(
                         savedMessage = "Regras salvas"
                     }
                 )
+                Tab.RIDES -> HistoryScreen(
+                    entries = history,
+                    onDelete = { id -> RideHistoryStore.delete(context, id); history = RideHistoryStore.load(context) },
+                    onClear = { RideHistoryStore.clear(context); history = emptyList(); savedMessage = "Histórico limpo" }
+                )
+                Tab.BOX -> BoxSettingsScreen(
+                    settings = settings,
+                    onSettingsChanged = { settings = it },
+                    onSave = { SettingsStore.save(context, settings); savedMessage = "Layout do box salvo" },
+                    onPreview = { SettingsStore.save(context, settings); onPreviewBox(); savedMessage = "Prévia exibida" }
+                )
                 Tab.READER -> ReaderScreen(
                     diagnostics = diagnostics,
                     onRequestCapture = onRequestCapture,
@@ -157,10 +176,10 @@ private fun Header(diagnostics: OcrDiagnostics) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = .12f)),
+                Modifier.size(46.dp).clip(CircleShape).background(Color.White),
                 contentAlignment = Alignment.Center
             ) {
-                Text("R", color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp)
+                Icon(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "RotaLucro", tint = Color.Unspecified, modifier = Modifier.size(44.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -261,12 +280,16 @@ private fun HomeScreen(
             CardBlock {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Última leitura", color = MutedText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${money(diagnostics.grossPerKm)}/km", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                        Text("Última análise", color = MutedText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("${money(diagnostics.analysisPerKm ?: diagnostics.grossPerKm)}/km", fontSize = 28.sp, fontWeight = FontWeight.Black)
                     }
-                    TextButton(onClick = onReader) { Text("Detalhes") }
+                    TextButton(onClick = onReader) { Text("Diagnóstico") }
                 }
-                Text("${money(diagnostics.grossPerHour ?: 0.0)}/h  •  ${formatTimeAgo(diagnostics.lastReadAt)}", color = MutedText, fontSize = 13.sp)
+                Text("${money(diagnostics.analysisPerHour ?: diagnostics.grossPerHour ?: 0.0)}/h  •  ${formatTimeAgo(diagnostics.lastReadAt)}", color = MutedText, fontSize = 13.sp)
+                if (diagnostics.possibleEmptyReturn) {
+                    Spacer(Modifier.height(7.dp))
+                    Text("⚠ Retorno vazio considerado: +${one(diagnostics.emptyReturnKm ?: 0.0)} km", color = BrandRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
         }
 
@@ -283,8 +306,8 @@ private fun HomeScreen(
 
         CardBlock {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF0F172A)), contentAlignment = Alignment.Center) {
-                    Text("R", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Box(Modifier.size(42.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(40.dp))
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -390,8 +413,10 @@ private fun ReaderScreen(
             ParseLine("VALOR", diagnostics.fare?.let(::money))
             ParseLine("COLETA", if (diagnostics.pickupKm != null && diagnostics.pickupMin != null) "${one(diagnostics.pickupKm)} km / ${diagnostics.pickupMin} min" else null)
             ParseLine("VIAGEM", if (diagnostics.tripKm != null && diagnostics.tripMin != null) "${one(diagnostics.tripKm)} km / ${diagnostics.tripMin} min" else null)
-            ParseLine("RESULTADO", diagnostics.grossPerKm?.let { "${money(it)}/km" })
-            ParseLine("R$/HORA", diagnostics.grossPerHour?.let { "${money(it)}/h" })
+            ParseLine("R$/KM OFERTA", diagnostics.grossPerKm?.let { "${money(it)}/km" })
+            ParseLine("R$/KM EFETIVO", diagnostics.analysisPerKm?.let { "${money(it)}/km" })
+            ParseLine("R$/HORA EFETIVO", diagnostics.analysisPerHour?.let { "${money(it)}/h" })
+            if (diagnostics.possibleEmptyReturn) ParseLine("RETORNO VAZIO", diagnostics.emptyReturnKm?.let { "+${one(it)} km" })
             ParseLine("BOX", if (diagnostics.boxDisplayed) "Exibido" else null)
         }
 
@@ -431,10 +456,23 @@ private fun SettingsScreen(
             DecimalField("Manutenção R$/km", settings.maintenancePerKm, Modifier.fillMaxWidth()) { onSettingsChanged(settings.copy(maintenancePerKm = it)) }
         }
         CardBlock {
-            Text("Box de resultado", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            Spacer(Modifier.height(10.dp))
-            IntField("Ocultar após (segundos)", settings.overlayAutoHideSeconds, Modifier.fillMaxWidth(), 8..45) {
-                onSettingsChanged(settings.copy(overlayAutoHideSeconds = it))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Retorno vazio / saída da cidade", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Para viagens longas, o app pode considerar a volta sem passageiro na rentabilidade.", color = MutedText, fontSize = 12.sp)
+                }
+                Switch(checked = settings.emptyReturnEnabled, onCheckedChange = { onSettingsChanged(settings.copy(emptyReturnEnabled = it)) })
+            }
+            if (settings.emptyReturnEnabled) {
+                Spacer(Modifier.height(12.dp))
+                DecimalField("Considerar retorno a partir de (km da viagem)", settings.emptyReturnTripKmThreshold, Modifier.fillMaxWidth()) {
+                    onSettingsChanged(settings.copy(emptyReturnTripKmThreshold = it.coerceAtLeast(0.1)))
+                }
+                Spacer(Modifier.height(9.dp))
+                DecimalField("Fator da volta vazia (1,0 = 100%)", settings.emptyReturnDistanceFactor, Modifier.fillMaxWidth()) {
+                    onSettingsChanged(settings.copy(emptyReturnDistanceFactor = it.coerceIn(0.0, 2.0)))
+                }
+                Text("Ex.: viagem de 12 km com fator 1,0 adiciona 12 km de retorno à análise. A cor do box passa a usar o R$/km efetivo.", color = MutedText, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
             }
         }
         CardBlock {
@@ -456,6 +494,147 @@ private fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
     }
 }
+
+
+@Composable
+private fun HistoryScreen(
+    entries: List<RideHistoryStore.Entry>,
+    onDelete: (Long) -> Unit,
+    onClear: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                SectionTitle("Corridas aceitas", "Salve pela bolha logo depois de aceitar uma oferta.")
+            }
+            if (entries.isNotEmpty()) TextButton(onClick = onClear) { Text("Limpar") }
+        }
+        if (entries.isEmpty()) {
+            CardBlock {
+                Icon(Icons.Rounded.ReceiptLong, null, tint = BrandBlue, modifier = Modifier.size(34.dp))
+                Spacer(Modifier.height(9.dp))
+                Text("Nenhuma corrida salva", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Depois de aceitar na 99, toque na bolha RotaLucro e escolha “Salvar última como aceita”. Fazemos assim para não confundir corrida aceita com oferta recusada ou expirada.", color = MutedText, fontSize = 12.sp)
+            }
+        } else {
+            val totalFare = entries.sumOf { it.fare }
+            val totalProfit = entries.sumOf { it.estimatedProfit }
+            val totalKm = entries.sumOf { it.totalKm }
+            CardBlock {
+                Text("Resumo", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MetricBox("Corridas", entries.size.toString(), Color(0xFFEEF4FF), BrandBlue, Modifier.weight(1f))
+                    MetricBox("Faturado", money(totalFare), Color(0xFFECFDF5), BrandGreen, Modifier.weight(1f))
+                    MetricBox("Km", one(totalKm), Color(0xFFF8FAFC), Color(0xFF475569), Modifier.weight(1f))
+                }
+                Text("Lucro estimado acumulado: ${money(totalProfit)}", color = MutedText, fontSize = 12.sp, modifier = Modifier.padding(top = 9.dp))
+            }
+            entries.forEach { item ->
+                CardBlock {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(money(item.fare), fontWeight = FontWeight.Black, fontSize = 22.sp)
+                            Text(SimpleDateFormat("dd/MM • HH:mm", Locale("pt", "BR")).format(Date(item.acceptedAt)), color = MutedText, fontSize = 11.sp)
+                        }
+                        Surface(shape = RoundedCornerShape(20.dp), color = when (item.rating) {
+                            com.rotalucro.app.calculator.OfferRating.BAD -> Color(0xFFFEE2E2)
+                            com.rotalucro.app.calculator.OfferRating.ATTENTION -> Color(0xFFFEF3C7)
+                            com.rotalucro.app.calculator.OfferRating.GOOD -> Color(0xFFDCFCE7)
+                        }) {
+                            Text("${money(item.analysisPerKm)}/km", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("${one(item.totalKm)} km • ${item.totalMin} min • ${money(item.analysisPerHour)}/h • lucro est. ${money(item.estimatedProfit)}", color = MutedText, fontSize = 12.sp)
+                    if (item.possibleEmptyReturn) Text("⚠ Análise considerou +${one(item.emptyReturnKm)} km de retorno vazio", color = BrandRed, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+                    TextButton(onClick = { onDelete(item.id) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.align(Alignment.End)) { Text("Excluir") }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun BoxSettingsScreen(
+    settings: DriverSettings,
+    onSettingsChanged: (DriverSettings) -> Unit,
+    onSave: () -> Unit,
+    onPreview: () -> Unit
+) {
+    val bg = safeComposeColor(settings.overlayBackgroundHex, Color.White)
+    val fg = safeComposeColor(settings.overlayTextHex, Color(0xFF0F172A))
+    val good = safeComposeColor(settings.overlayGoodHex, BrandGreen)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Personalizar box", "Escolha posição, tamanho, transparência e cores do aviso sobre a 99.")
+        CardBlock {
+            Text("Prévia", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Spacer(Modifier.height(10.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)),
+                color = bg.copy(alpha = settings.overlayOpacityPercent.coerceIn(35, 100) / 100f),
+                border = androidx.compose.foundation.BorderStroke(3.dp, good)
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("R$ 1,85/km", color = fg, fontSize = (24 * settings.overlayScalePercent / 100f).sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                        Surface(shape = RoundedCornerShape(20.dp), color = good) { Text("ÓTIMA", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)) }
+                    }
+                    Text("R$ 52,85/h • 10,0 km • 21 min • R$ 18,50", color = fg.copy(alpha = .72f), fontSize = 12.sp)
+                }
+            }
+        }
+        CardBlock {
+            Text("Posição e tamanho", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            SliderSetting("Posição vertical", settings.overlayYPercent, 0..75, "%") { onSettingsChanged(settings.copy(overlayYPercent = it)) }
+            SliderSetting("Posição horizontal", settings.overlayXPercent, 0..100, "%") { onSettingsChanged(settings.copy(overlayXPercent = it)) }
+            SliderSetting("Largura", settings.overlayWidthPercent, 55..100, "%") { onSettingsChanged(settings.copy(overlayWidthPercent = it)) }
+            SliderSetting("Tamanho do conteúdo", settings.overlayScalePercent, 75..135, "%") { onSettingsChanged(settings.copy(overlayScalePercent = it)) }
+            SliderSetting("Transparência", settings.overlayOpacityPercent, 35..100, "%") { onSettingsChanged(settings.copy(overlayOpacityPercent = it)) }
+            IntField("Ocultar após (segundos)", settings.overlayAutoHideSeconds, Modifier.fillMaxWidth(), 5..60) { onSettingsChanged(settings.copy(overlayAutoHideSeconds = it)) }
+        }
+        CardBlock {
+            Text("Cores", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text("Use um preset ou personalize em hexadecimal.", color = MutedText, fontSize = 11.sp, modifier = Modifier.padding(bottom = 9.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { onSettingsChanged(settings.copy(overlayBackgroundHex = "#FFFFFF", overlayTextHex = "#0F172A")) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Claro", fontSize = 11.sp) }
+                OutlinedButton(onClick = { onSettingsChanged(settings.copy(overlayBackgroundHex = "#111827", overlayTextHex = "#F8FAFC")) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Escuro", fontSize = 11.sp) }
+                OutlinedButton(onClick = { onSettingsChanged(settings.copy(overlayBackgroundHex = "#000000", overlayTextHex = "#FFFFFF", overlayBadHex = "#FF3B30", overlayAttentionHex = "#FFD60A", overlayGoodHex = "#30D158")) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Contraste", fontSize = 11.sp) }
+            }
+            Spacer(Modifier.height(8.dp))
+            HexColorField("Fundo", settings.overlayBackgroundHex) { onSettingsChanged(settings.copy(overlayBackgroundHex = it)) }
+            Spacer(Modifier.height(8.dp))
+            HexColorField("Texto", settings.overlayTextHex) { onSettingsChanged(settings.copy(overlayTextHex = it)) }
+            Spacer(Modifier.height(8.dp))
+            HexColorField("Ruim", settings.overlayBadHex) { onSettingsChanged(settings.copy(overlayBadHex = it)) }
+            Spacer(Modifier.height(8.dp))
+            HexColorField("Média", settings.overlayAttentionHex) { onSettingsChanged(settings.copy(overlayAttentionHex = it)) }
+            Spacer(Modifier.height(8.dp))
+            HexColorField("Ótima", settings.overlayGoodHex) { onSettingsChanged(settings.copy(overlayGoodHex = it)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onPreview, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp)) { Text("Testar box") }
+            Button(onClick = onSave, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp)) { Text("Salvar", fontWeight = FontWeight.Bold) }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SliderSetting(label: String, value: Int, range: IntRange, suffix: String, onValue: (Int) -> Unit) {
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Row { Text(label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f)); Text("$value$suffix", color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+        Slider(value = value.toFloat(), onValueChange = { onValue(it.toInt()) }, valueRange = range.first.toFloat()..range.last.toFloat())
+    }
+}
+
+@Composable
+private fun HexColorField(label: String, value: String, onValue: (String) -> Unit) {
+    OutlinedTextField(value = value, onValueChange = onValue, label = { Text(label) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+}
+
+private fun safeComposeColor(raw: String, fallback: Color): Color = runCatching { Color(android.graphics.Color.parseColor(raw)) }.getOrDefault(fallback)
 
 @Composable
 private fun CardBlock(content: @Composable ColumnScope.() -> Unit) {

@@ -138,4 +138,29 @@ class RideCalculatorTest {
         assertTrue(attempt.normalizedTexts.contains("R$8,40"))
     }
 
+    @Test
+    fun longTripCanIncludeEmptyReturnInRating() {
+        val settingsWithReturn = settings.copy(
+            emptyReturnEnabled = true,
+            emptyReturnTripKmThreshold = 5.0,
+            emptyReturnDistanceFactor = 1.0
+        )
+        val result = RideCalculator.calculate(
+            offer = RideOffer(
+                fare = 18.0,
+                pickupDistanceKm = 1.0,
+                tripDistanceKm = 9.0,
+                pickupMinutes = 4,
+                tripMinutes = 18
+            ),
+            settings = settingsWithReturn,
+            minuteOfDay = 10 * 60
+        )
+        assertTrue(result.possibleEmptyReturn)
+        assertEquals(9.0, result.emptyReturnDistanceKm, 0.001)
+        assertEquals(19.0, result.analysisDistanceKm, 0.001)
+        assertEquals(18.0 / 19.0, result.analysisPerKm, 0.001)
+        assertEquals(OfferRating.BAD, result.rating)
+    }
+
 }

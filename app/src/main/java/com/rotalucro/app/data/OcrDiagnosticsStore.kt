@@ -20,6 +20,10 @@ data class OcrDiagnostics(
     val tripMin: Int?,
     val grossPerKm: Double?,
     val grossPerHour: Double?,
+    val analysisPerKm: Double?,
+    val analysisPerHour: Double?,
+    val possibleEmptyReturn: Boolean,
+    val emptyReturnKm: Double?,
     val boxDisplayed: Boolean,
     val lastReadAt: Long
 )
@@ -27,13 +31,7 @@ data class OcrDiagnostics(
 object OcrDiagnosticsStore {
     private const val FILE = "ocr_diagnostics"
 
-    fun record(
-        context: Context,
-        parse: OcrParseResult,
-        result: RideResult?,
-        recognizedLineCount: Int,
-        boxDisplayed: Boolean
-    ) {
+    fun record(context: Context, parse: OcrParseResult, result: RideResult?, recognizedLineCount: Int, boxDisplayed: Boolean) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putInt("lineCount", recognizedLineCount)
             .putString("texts", parse.usefulTexts.joinToString("\n"))
@@ -45,6 +43,10 @@ object OcrDiagnosticsStore {
             .putInt("tripMin", parse.trip?.minutes ?: -1)
             .putFloat("perKm", (result?.grossPerKm ?: -1.0).toFloat())
             .putFloat("perHour", (result?.grossPerHour ?: -1.0).toFloat())
+            .putFloat("analysisPerKm", (result?.analysisPerKm ?: -1.0).toFloat())
+            .putFloat("analysisPerHour", (result?.analysisPerHour ?: -1.0).toFloat())
+            .putBoolean("possibleEmptyReturn", result?.possibleEmptyReturn == true)
+            .putFloat("emptyReturnKm", (result?.emptyReturnDistanceKm ?: -1.0).toFloat())
             .putBoolean("box", boxDisplayed)
             .putLong("lastReadAt", System.currentTimeMillis())
             .apply()
@@ -68,15 +70,13 @@ object OcrDiagnosticsStore {
             recognizedLineCount = p.getInt("lineCount", 0),
             usefulTexts = p.getString("texts", "").orEmpty().lines().filter { it.isNotBlank() },
             reason = p.getString("reason", "Aguardando a primeira leitura.").orEmpty(),
-            fare = floatOrNull("fare"),
-            pickupKm = floatOrNull("pickupKm"),
-            pickupMin = intOrNull("pickupMin"),
-            tripKm = floatOrNull("tripKm"),
-            tripMin = intOrNull("tripMin"),
-            grossPerKm = floatOrNull("perKm"),
-            grossPerHour = floatOrNull("perHour"),
-            boxDisplayed = p.getBoolean("box", false),
-            lastReadAt = p.getLong("lastReadAt", 0L)
+            fare = floatOrNull("fare"), pickupKm = floatOrNull("pickupKm"), pickupMin = intOrNull("pickupMin"),
+            tripKm = floatOrNull("tripKm"), tripMin = intOrNull("tripMin"),
+            grossPerKm = floatOrNull("perKm"), grossPerHour = floatOrNull("perHour"),
+            analysisPerKm = floatOrNull("analysisPerKm"), analysisPerHour = floatOrNull("analysisPerHour"),
+            possibleEmptyReturn = p.getBoolean("possibleEmptyReturn", false),
+            emptyReturnKm = floatOrNull("emptyReturnKm"),
+            boxDisplayed = p.getBoolean("box", false), lastReadAt = p.getLong("lastReadAt", 0L)
         )
     }
 }

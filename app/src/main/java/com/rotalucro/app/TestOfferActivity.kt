@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,7 +48,8 @@ private fun SimulatorScreen(onClose: () -> Unit) {
         DemoOffer("Exemplo real", "R$8,40", "6min (2km)", "5min (2,3km)", "1,6x"),
         DemoOffer("Corrida ruim", "R$6,00", "6min (2km)", "12min (4km)", "1,2x"),
         DemoOffer("Corrida média", "R$8,00", "5min (1km)", "10min (4km)", "1,3x"),
-        DemoOffer("Corrida ótima", "R$10,00", "4min (1km)", "8min (3km)", "1,8x")
+        DemoOffer("Corrida ótima", "R$10,00", "4min (1km)", "8min (3km)", "1,8x"),
+        DemoOffer("Viagem longa", "R$18,00", "4min (1km)", "18min (9km)", "1,4x")
     )
     var selected by remember { mutableIntStateOf(0) }
     val offer = examples[selected]
@@ -66,13 +69,12 @@ private fun SimulatorScreen(onClose: () -> Unit) {
                 }
                 Spacer(Modifier.height(18.dp))
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     examples.forEachIndexed { index, item ->
                         FilterChip(
                             selected = selected == index,
                             onClick = { selected = index },
-                            label = { Text(item.label, maxLines = 1) },
-                            modifier = Modifier.weight(1f)
+                            label = { Text(item.label, maxLines = 1) }
                         )
                     }
                 }

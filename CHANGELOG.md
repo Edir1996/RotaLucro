@@ -1,25 +1,14 @@
 # Changelog
 
+## 0.7.0
+- OCR passa a continuar processando enquanto a captura estiver ativa, sem depender de eventos isolados da Acessibilidade.
+- Detecção da 99 estabilizada usando a janela ativa e ignorando eventos transitórios do SystemUI/overlays.
+- Bolha flutuante usa a identidade visual/logo do RotaLucro e memoriza a posição.
+- Menu da bolha ganhou “Salvar última como aceita”.
+- Novo histórico local de corridas aceitas, com faturamento, km, R$/km, R$/hora e lucro estimado.
+- Nova tela Box para configurar posição vertical, largura, tamanho, transparência, tempo e cores, com prévia na tela.
+- Nova análise de retorno vazio: viagens acima do limite configurável consideram km/tempo de volta sem passageiro e classificam pela rentabilidade efetiva.
+- Custos de combustível/manutenção também passam a considerar o retorno vazio quando ativado.
+
 ## 0.6.1
-- Corrige build em repositórios atualizados a partir da v0.4/v0.5.
-- Adiciona um `OverlayController` de compatibilidade para substituir o arquivo legado que chamava `showPreviewOverlay()`, método removido na arquitetura OCR.
-- Mantém captura MediaProjection, ML Kit OCR, bolha flutuante e regras por horário da v0.6.0.
-
-
-## 0.6.0
-
-- Substitui leitura dos valores via árvore de acessibilidade por OCR local com ML Kit.
-- Adiciona captura de tela via MediaProjection com foreground service `mediaProjection`.
-- Modelo OCR latino agrupado no APK (`com.google.mlkit:text-recognition:16.0.1`).
-- Não salva screenshots e não usa permissão de Internet.
-- Serviço de acessibilidade passa a identificar apenas o app em primeiro plano e hospedar overlays.
-- Nova bolha flutuante arrastável com menu: ativar/desativar OCR, ler agora, abrir app e ocultar.
-- Novo box compacto de resultado com R$/km, R$/hora, km, minutos, valor, regra ativa e lucro estimado.
-- Novo laboratório OCR com ofertas simuladas para testar sem ficar online na 99.
-- Nova aba Leitor com diagnóstico detalhado do pipeline OCR.
-- Parser OCR evita usar `Tarifa base dinâmica` como valor principal.
-- Mantém regras padrão e quatro faixas configuráveis por horário.
-
-## 0.5.0
-
-- Diagnóstico do leitor por acessibilidade e simulador inicial.
+- Correção de compatibilidade do OverlayController legado.
