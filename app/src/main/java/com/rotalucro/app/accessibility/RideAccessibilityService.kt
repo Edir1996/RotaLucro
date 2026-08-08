@@ -275,7 +275,7 @@ class RideAccessibilityService : AccessibilityService() {
             OfferRating.ATTENTION -> "#F59E0B"
             OfferRating.GOOD -> "#22C55E"
         })
-        val background = safeColor(settings.overlayBackgroundHex, "#FFFFFF")
+        val backgroundHex = safeColor(settings.overlayBackgroundHex, "#FFFFFF")
         val textColor = safeColor(settings.overlayTextHex, "#0F172A")
         val secondary = withAlpha(textColor, 0.72f)
         val ratingLabel = when (rating) { OfferRating.BAD -> "RUIM"; OfferRating.ATTENTION -> "MÉDIA"; OfferRating.GOOD -> "ÓTIMA" }
@@ -286,7 +286,7 @@ class RideAccessibilityService : AccessibilityService() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad(16), pad(11), pad(16), pad(12))
-            background = roundedDrawable(background, 18f, accent, dp(3))
+            background = roundedDrawable(backgroundHex, 18f, accent, dp(3))
             elevation = dp(14).toFloat()
             alpha = settings.overlayOpacityPercent.coerceIn(35, 100) / 100f
         }
