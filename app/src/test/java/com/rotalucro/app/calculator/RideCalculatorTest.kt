@@ -163,4 +163,48 @@ class RideCalculatorTest {
         assertEquals(OfferRating.BAD, result.rating)
     }
 
+    @Test
+    fun smartDemandAddsReturnAndPremiumForFarDestination() {
+        val demand = DemandAssessment(
+            destinationText = "Destino afastado",
+            distanceToDemandKm = 8.0,
+            distanceClass = DemandDistanceClass.FAR,
+            demandLevel = DemandLevel.LOW
+        )
+        val result = RideCalculator.calculate(
+            offer = RideOffer(
+                fare = 10.0,
+                pickupDistanceKm = 2.0,
+                tripDistanceKm = 5.0,
+                pickupMinutes = 5,
+                tripMinutes = 10
+            ),
+            settings = settings.copy(smartDemandEnabled = true, demandReturnFactor = 1.0),
+            minuteOfDay = 10 * 60,
+            demand = demand
+        )
+        assertEquals(15.0, result.analysisDistanceKm, 0.001)
+        assertEquals(8.0, result.emptyReturnDistanceKm, 0.001)
+        assertEquals(1.60, result.effectiveMinimumPerKm, 0.001)
+        assertEquals(OfferRating.BAD, result.rating)
+        assertEquals(RideRecommendation.REJECT, result.recommendation)
+    }
+
+    @Test
+    fun highDemandRelievesDistancePremium() {
+        val demand = DemandAssessment(
+            distanceToDemandKm = 6.0,
+            distanceClass = DemandDistanceClass.ATTENTION,
+            demandLevel = DemandLevel.HIGH
+        )
+        val result = RideCalculator.calculate(
+            RideOffer(18.0, 1.0, 7.0, 3, 15),
+            settings.copy(smartDemandEnabled = true, demandReturnFactor = 0.0),
+            minuteOfDay = 10 * 60,
+            demand = demand
+        )
+        assertTrue(result.effectiveMinimumPerKm < settings.premiumMin5To7Km)
+        assertTrue(result.smartScore > 50)
+    }
+
 }

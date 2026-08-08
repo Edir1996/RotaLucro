@@ -40,16 +40,16 @@ class TestOfferActivity : ComponentActivity() {
     }
 }
 
-private data class DemoOffer(val label: String, val fare: String, val pickup: String, val trip: String, val surge: String)
+private data class DemoOffer(val label: String, val fare: String, val pickup: String, val trip: String, val surge: String, val pickupAddress: String, val destinationAddress: String)
 
 @Composable
 private fun SimulatorScreen(onClose: () -> Unit) {
     val examples = listOf(
-        DemoOffer("Exemplo real", "R$8,40", "6min (2km)", "5min (2,3km)", "1,6x"),
-        DemoOffer("Corrida ruim", "R$6,00", "6min (2km)", "12min (4km)", "1,2x"),
-        DemoOffer("Corrida média", "R$8,00", "5min (1km)", "10min (4km)", "1,3x"),
-        DemoOffer("Corrida ótima", "R$10,00", "4min (1km)", "8min (3km)", "1,8x"),
-        DemoOffer("Viagem longa", "R$18,00", "4min (1km)", "18min (9km)", "1,4x")
+        DemoOffer("Exemplo real", "R$8,40", "6min (2km)", "5min (2,3km)", "1,6x", "Rua Brusque, Itajaí - SC", "Av. Ministro Victor Konder, Itajaí - SC"),
+        DemoOffer("Corrida ruim", "R$6,00", "6min (2km)", "12min (4km)", "1,2x", "Centro, Itajaí - SC", "São Vicente, Itajaí - SC"),
+        DemoOffer("Corrida média", "R$8,00", "5min (1km)", "10min (4km)", "1,3x", "Centro, Itajaí - SC", "Fazenda, Itajaí - SC"),
+        DemoOffer("Corrida ótima", "R$10,00", "4min (1km)", "8min (3km)", "1,8x", "Centro, Itajaí - SC", "Centro, Itajaí - SC"),
+        DemoOffer("Fora da cidade", "R$18,00", "4min (1km)", "18min (9km)", "1,4x", "Centro, Itajaí - SC", "Av. Atlântica, Balneário Camboriú - SC")
     )
     var selected by remember { mutableIntStateOf(0) }
     val offer = examples[selected]
@@ -106,10 +106,10 @@ private fun SimulatorScreen(onClose: () -> Unit) {
                         Text("4,86 • 302 corridas • Perfil Premium", color = Color(0xFFE2E8F0), fontSize = 15.sp)
                         Spacer(Modifier.height(18.dp))
                         Text("🟢 ${offer.pickup}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("Rua de teste, 123", color = Color(0xFFCBD5E1), fontSize = 15.sp)
+                        Text(offer.pickupAddress, color = Color(0xFFCBD5E1), fontSize = 15.sp)
                         Spacer(Modifier.height(14.dp))
                         Text("🟠 ${offer.trip}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("Destino de teste, 721", color = Color(0xFFCBD5E1), fontSize = 15.sp)
+                        Text(offer.destinationAddress, color = Color(0xFFCBD5E1), fontSize = 15.sp)
                         Spacer(Modifier.height(22.dp))
                         Box(
                             Modifier.fillMaxWidth().height(58.dp)

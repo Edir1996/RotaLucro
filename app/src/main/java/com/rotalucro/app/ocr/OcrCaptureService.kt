@@ -30,6 +30,9 @@ import com.rotalucro.app.calculator.RideCalculator
 import com.rotalucro.app.data.OcrDiagnosticsStore
 import com.rotalucro.app.data.LastRideStore
 import com.rotalucro.app.data.SettingsStore
+import com.rotalucro.app.data.DemandLearningStore
+import com.rotalucro.app.demand.DestinationGeoResolver
+import com.rotalucro.app.calculator.DemandAssessment
 import com.rotalucro.app.runtime.RuntimeState
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -50,6 +53,8 @@ class OcrCaptureService : Service() {
     private var lastSignatureAt = 0L
     private var misses = 0
     private var forceOneScan = false
+    private var resolvingDemandKey = ""
+    private val demandCache = LinkedHashMap<String, DemandAssessment>()
 
     override fun onCreate() {
         super.onCreate()
@@ -172,7 +177,9 @@ class OcrCaptureService : Service() {
                     OcrLine(
                         text = line.text,
                         top = box?.top ?: 0,
-                        height = box?.height() ?: 0
+                        height = box?.height() ?: 0,
+                        left = box?.left ?: 0,
+                        width = box?.width() ?: 0
                     )
                 }
                 handleOcr(lines)
@@ -192,29 +199,55 @@ class OcrCaptureService : Service() {
     private fun handleOcr(lines: List<OcrLine>) {
         val parsed = OcrOfferParser.parse(lines)
         val likely99Offer = RuntimeState.is99Visible || RuntimeState.simulatorVisible || parsed.usefulTexts.any { it.contains("Aceitar", ignoreCase = true) }
-        val result = if (likely99Offer) parsed.offer?.let { RideCalculator.calculate(it, SettingsStore.load(this)) } else null
-        var showBox = false
-
-        if (result != null) {
-            misses = 0
-            val signature = "${"%.2f".format(result.fare)}-${"%.2f".format(result.totalDistanceKm)}-${result.totalMinutes}"
-            val now = System.currentTimeMillis()
-            if (signature != lastSignature || now - lastSignatureAt > 18_000L) {
-                lastSignature = signature
-                lastSignatureAt = now
-                showBox = true
-                RideOverlayBus.publish(this, result)
-            }
-            LastRideStore.save(this, result)
-            val metric = if (result.possibleEmptyReturn) result.analysisPerKm else result.grossPerKm
-            updateNotification("${formatMoney(metric)}/km • ${ratingName(result.rating)}${if (result.possibleEmptyReturn) " • retorno vazio" else ""}")
-        } else {
+        val offer = parsed.offer
+        if (!likely99Offer || offer == null) {
             misses++
             if (misses >= 3) lastSignature = ""
             updateNotification("OCR ativo • ${if (RuntimeState.is99Visible) "99 detectada" else "aguardando oferta"}")
+            OcrDiagnosticsStore.record(this, parsed, null, lines.size, false)
+            sendStatusBroadcast()
+            return
         }
 
-        OcrDiagnosticsStore.record(this, parsed, result, lines.size, showBox)
+        val settings = SettingsStore.load(this)
+        val destinationText = offer.destinationLocationText?.trim().orEmpty()
+        val demandKey = "${"%.2f".format(offer.fare)}-${"%.2f".format(offer.pickupDistanceKm)}-${"%.2f".format(offer.tripDistanceKm)}-${offer.pickupMinutes}-${offer.tripMinutes}"
+        val cached = demandCache[demandKey]
+        if (settings.smartDemandEnabled && destinationText.isNotBlank() && cached == null) {
+            if (resolvingDemandKey != demandKey) {
+                resolvingDemandKey = demandKey
+                updateNotification("OCR ativo • analisando destino")
+                DestinationGeoResolver.assessAsync(this, offer, settings) { assessment ->
+                    demandCache[demandKey] = assessment
+                    while (demandCache.size > 20) demandCache.remove(demandCache.keys.first())
+                    resolvingDemandKey = ""
+                    worker.post { processRecognizedOffer(parsed, lines.size, assessment, forceDisplay = true) }
+                }
+            }
+            OcrDiagnosticsStore.record(this, parsed, null, lines.size, false)
+            sendStatusBroadcast()
+            return
+        }
+        processRecognizedOffer(parsed, lines.size, cached, forceDisplay = false)
+    }
+
+    private fun processRecognizedOffer(parsed: OcrParseResult, lineCount: Int, demand: DemandAssessment?, forceDisplay: Boolean) {
+        val offer = parsed.offer ?: return
+        val result = RideCalculator.calculate(offer, SettingsStore.load(this), demand = demand)
+        misses = 0
+        val signature = "${"%.2f".format(result.fare)}-${"%.2f".format(result.totalDistanceKm)}-${result.totalMinutes}"
+        val now = System.currentTimeMillis()
+        var showBox = false
+        if (forceDisplay || signature != lastSignature || now - lastSignatureAt > 18_000L) {
+            if (signature != lastSignature) DemandLearningStore.registerNewOffer(this, now)
+            lastSignature = signature
+            lastSignatureAt = now
+            showBox = true
+            RideOverlayBus.publish(this, result)
+        }
+        LastRideStore.save(this, result)
+        updateNotification("${formatMoney(result.analysisPerKm)}/km • ${ratingName(result.rating)} • score ${result.smartScore}")
+        OcrDiagnosticsStore.record(this, parsed, result, lineCount, showBox)
         sendStatusBroadcast()
     }
 

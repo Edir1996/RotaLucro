@@ -7,7 +7,9 @@ import com.rotalucro.app.calculator.RideOffer
 data class OcrLine(
     val text: String,
     val top: Int = 0,
-    val height: Int = 0
+    val height: Int = 0,
+    val left: Int = 0,
+    val width: Int = 0
 )
 
 data class OcrParseResult(
@@ -75,6 +77,9 @@ object OcrOfferParser {
 
         val pickup = segments[0]
         val trip = segments[1]
+        val segmentLines = cleaned.filter { segmentRegex.containsMatchIn(it.text) }.sortedBy { it.top }
+        val pickupText = segmentLines.getOrNull(0)?.let { chooseLocationNear(it, cleaned, segmentLines.getOrNull(1)?.top) }
+        val destinationText = segmentLines.getOrNull(1)?.let { chooseLocationNear(it, cleaned, null) }
         val offer = RideOffer(
             fare = fare,
             pickupDistanceKm = pickup.distanceKm,
@@ -84,6 +89,8 @@ object OcrOfferParser {
             surgeMultiplier = surge,
             dynamicBaseFare = dynamicBase,
             productName = cleaned.firstOrNull { containsAny(it.text, "moto", "99pop", "99 moto") }?.text,
+            pickupLocationText = pickupText,
+            destinationLocationText = destinationText,
             sourceText = useful
         )
 
@@ -138,6 +145,28 @@ object OcrOfferParser {
         lines.forEach { addFrom(it.text) }
         if (hits.size < 2) addFrom(lines.joinToString(" ") { it.text })
         return hits.take(4)
+    }
+
+
+    private fun chooseLocationNear(segmentLine: OcrLine, lines: List<OcrLine>, nextSegmentTop: Int?): String? {
+        val inline = segmentRegex.replace(segmentLine.text, "").trim(' ', '-', '•', '|', ':')
+        if (isLocationCandidate(inline)) return inline
+        val maxTop = nextSegmentTop?.minus(8) ?: (segmentLine.top + 260)
+        return lines.asSequence()
+            .filter { it !== segmentLine }
+            .filter { it.top >= segmentLine.top - 55 && it.top <= maxTop }
+            .filter { isLocationCandidate(it.text) }
+            .sortedWith(compareBy<OcrLine> { kotlin.math.abs(it.top - segmentLine.top) }.thenByDescending { it.left })
+            .map { it.text }
+            .firstOrNull()
+    }
+
+    private fun isLocationCandidate(text: String): Boolean {
+        if (text.length < 4 || text.length > 120) return false
+        if (!text.any { it.isLetter() }) return false
+        if (moneyRegex.containsMatchIn(text) || segmentRegex.containsMatchIn(text) || surgeRegex.containsMatchIn(text)) return false
+        if (containsAny(text, "aceitar", "moto", "taxa", "tarifa", "perfil", "corridas", "premium", "oferta", "rota lucro", "rotalucro")) return false
+        return true
     }
 
     private fun isUsefulLine(text: String): Boolean {

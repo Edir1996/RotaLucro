@@ -31,7 +31,14 @@ object SettingsStore {
             overlayGoodHex = p.getString("overlayGoodHex", "#22C55E") ?: "#22C55E",
             emptyReturnEnabled = p.getBoolean("emptyReturnEnabled", true),
             emptyReturnTripKmThreshold = p.getFloat("emptyReturnTripKmThreshold", 10.0f).toDouble(),
-            emptyReturnDistanceFactor = p.getFloat("emptyReturnDistanceFactor", 1.0f).toDouble()
+            emptyReturnDistanceFactor = p.getFloat("emptyReturnDistanceFactor", 1.0f).toDouble(),
+            smartDemandEnabled = p.getBoolean("smartDemandEnabled", true),
+            baseCity = p.getString("baseCity", "Itajaí, SC") ?: "Itajaí, SC",
+            demandReturnFactor = p.getFloat("demandReturnFactor", 1.0f).toDouble(),
+            premiumMin5To7Km = p.getFloat("premiumMin5To7Km", 1.40f).toDouble(),
+            premiumMin7To9Km = p.getFloat("premiumMin7To9Km", 1.60f).toDouble(),
+            premiumMin9PlusKm = p.getFloat("premiumMin9PlusKm", 1.80f).toDouble(),
+            demandLearningEnabled = p.getBoolean("demandLearningEnabled", true)
         )
     }
 
@@ -56,6 +63,13 @@ object SettingsStore {
             .putBoolean("emptyReturnEnabled", settings.emptyReturnEnabled)
             .putFloat("emptyReturnTripKmThreshold", settings.emptyReturnTripKmThreshold.coerceAtLeast(0.1).toFloat())
             .putFloat("emptyReturnDistanceFactor", settings.emptyReturnDistanceFactor.coerceIn(0.0, 2.0).toFloat())
+            .putBoolean("smartDemandEnabled", settings.smartDemandEnabled)
+            .putString("baseCity", settings.baseCity.trim())
+            .putFloat("demandReturnFactor", settings.demandReturnFactor.coerceIn(0.0, 2.0).toFloat())
+            .putFloat("premiumMin5To7Km", settings.premiumMin5To7Km.coerceAtLeast(0.1).toFloat())
+            .putFloat("premiumMin7To9Km", settings.premiumMin7To9Km.coerceAtLeast(0.1).toFloat())
+            .putFloat("premiumMin9PlusKm", settings.premiumMin9PlusKm.coerceAtLeast(0.1).toFloat())
+            .putBoolean("demandLearningEnabled", settings.demandLearningEnabled)
 
         settings.scheduledThresholds.take(4).forEachIndexed { index, schedule ->
             val number = index + 1

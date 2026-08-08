@@ -24,6 +24,12 @@ data class OcrDiagnostics(
     val analysisPerHour: Double?,
     val possibleEmptyReturn: Boolean,
     val emptyReturnKm: Double?,
+    val destinationText: String?,
+    val distanceToDemandKm: Double?,
+    val demandZoneName: String?,
+    val demandClass: String?,
+    val smartScore: Int?,
+    val recommendation: String?,
     val boxDisplayed: Boolean,
     val lastReadAt: Long
 )
@@ -32,6 +38,7 @@ object OcrDiagnosticsStore {
     private const val FILE = "ocr_diagnostics"
 
     fun record(context: Context, parse: OcrParseResult, result: RideResult?, recognizedLineCount: Int, boxDisplayed: Boolean) {
+        val d = result?.demandAssessment
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putInt("lineCount", recognizedLineCount)
             .putString("texts", parse.usefulTexts.joinToString("\n"))
@@ -47,6 +54,12 @@ object OcrDiagnosticsStore {
             .putFloat("analysisPerHour", (result?.analysisPerHour ?: -1.0).toFloat())
             .putBoolean("possibleEmptyReturn", result?.possibleEmptyReturn == true)
             .putFloat("emptyReturnKm", (result?.emptyReturnDistanceKm ?: -1.0).toFloat())
+            .putString("destinationText", result?.offer?.destinationLocationText ?: parse.offer?.destinationLocationText)
+            .putFloat("distanceToDemandKm", (d?.distanceToDemandKm ?: -1.0).toFloat())
+            .putString("demandZoneName", d?.nearestDemandZoneName)
+            .putString("demandClass", d?.distanceClass?.label)
+            .putInt("smartScore", result?.smartScore ?: -1)
+            .putString("recommendation", result?.recommendation?.name)
             .putBoolean("box", boxDisplayed)
             .putLong("lastReadAt", System.currentTimeMillis())
             .apply()
@@ -76,6 +89,12 @@ object OcrDiagnosticsStore {
             analysisPerKm = floatOrNull("analysisPerKm"), analysisPerHour = floatOrNull("analysisPerHour"),
             possibleEmptyReturn = p.getBoolean("possibleEmptyReturn", false),
             emptyReturnKm = floatOrNull("emptyReturnKm"),
+            destinationText = p.getString("destinationText", null),
+            distanceToDemandKm = floatOrNull("distanceToDemandKm"),
+            demandZoneName = p.getString("demandZoneName", null),
+            demandClass = p.getString("demandClass", null),
+            smartScore = intOrNull("smartScore"),
+            recommendation = p.getString("recommendation", null),
             boxDisplayed = p.getBoolean("box", false), lastReadAt = p.getLong("lastReadAt", 0L)
         )
     }

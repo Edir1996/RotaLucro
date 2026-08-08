@@ -64,4 +64,18 @@ class OcrOfferParserTest {
         assertNotNull(parsed.offer)
         assertEquals(5.5, parsed.offer!!.pickupDistanceKm + parsed.offer!!.tripDistanceKm, 0.001)
     }
+    @Test
+    fun `extracts pickup and destination text near route segments`() {
+        val parsed = OcrOfferParser.parse(listOf(
+            OcrLine("R$8,40", 90, 60, 40, 180),
+            OcrLine("6min (2km)", 420, 28, 35, 130),
+            OcrLine("Rua Brusque, 120", 425, 26, 210, 300),
+            OcrLine("5min (2,3km)", 520, 28, 35, 150),
+            OcrLine("Av. Beira Rio, Itajaí", 525, 26, 210, 350),
+            OcrLine("Aceitar", 650, 24, 200, 200)
+        ))
+        assertEquals("Rua Brusque, 120", parsed.offer!!.pickupLocationText)
+        assertEquals("Av. Beira Rio, Itajaí", parsed.offer!!.destinationLocationText)
+    }
+
 }

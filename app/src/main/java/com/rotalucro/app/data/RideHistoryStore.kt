@@ -2,6 +2,7 @@ package com.rotalucro.app.data
 
 import android.content.Context
 import com.rotalucro.app.calculator.OfferRating
+import com.rotalucro.app.calculator.RideRecommendation
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -21,16 +22,24 @@ object RideHistoryStore {
         val estimatedProfit: Double,
         val rating: OfferRating,
         val possibleEmptyReturn: Boolean,
-        val emptyReturnKm: Double
+        val emptyReturnKm: Double,
+        val destinationText: String? = null,
+        val destinationLat: Double? = null,
+        val destinationLon: Double? = null,
+        val destinationCity: String? = null,
+        val distanceToDemandKm: Double? = null,
+        val demandZoneName: String? = null,
+        val smartScore: Int = 0,
+        val recommendation: RideRecommendation = RideRecommendation.CAUTION
     )
 
     fun saveLatestAsAccepted(context: Context): Entry? {
         val last = LastRideStore.load(context) ?: return null
-        // Evita salvar por engano uma oferta antiga depois de horas.
         if (System.currentTimeMillis() - last.timestamp > 10 * 60_000L) return null
+        val now = System.currentTimeMillis()
         val entry = Entry(
-            id = System.currentTimeMillis(),
-            acceptedAt = System.currentTimeMillis(),
+            id = now,
+            acceptedAt = now,
             fare = last.fare,
             totalKm = last.totalKm,
             totalMin = last.totalMin,
@@ -39,7 +48,15 @@ object RideHistoryStore {
             estimatedProfit = last.profit,
             rating = last.rating,
             possibleEmptyReturn = last.possibleEmptyReturn,
-            emptyReturnKm = last.emptyReturnKm
+            emptyReturnKm = last.emptyReturnKm,
+            destinationText = last.destinationText,
+            destinationLat = last.destinationLat,
+            destinationLon = last.destinationLon,
+            destinationCity = last.destinationCity,
+            distanceToDemandKm = last.distanceToDemandKm,
+            demandZoneName = last.demandZoneName,
+            smartScore = last.smartScore,
+            recommendation = last.recommendation
         )
         val items = load(context).toMutableList()
         val duplicate = items.firstOrNull {
@@ -50,6 +67,9 @@ object RideHistoryStore {
         if (duplicate != null) return duplicate
         items.add(0, entry)
         persist(context, items.take(MAX_ITEMS))
+        if (SettingsStore.load(context).demandLearningEnabled) {
+            DemandLearningStore.startPending(context, entry.destinationLat, entry.destinationLon, entry.acceptedAt, entry.totalMin)
+        }
         return entry
     }
 
@@ -72,7 +92,15 @@ object RideHistoryStore {
                             estimatedProfit = o.optDouble("estimatedProfit"),
                             rating = runCatching { OfferRating.valueOf(o.optString("rating")) }.getOrDefault(OfferRating.ATTENTION),
                             possibleEmptyReturn = o.optBoolean("possibleEmptyReturn"),
-                            emptyReturnKm = o.optDouble("emptyReturnKm")
+                            emptyReturnKm = o.optDouble("emptyReturnKm"),
+                            destinationText = o.optString("destinationText").takeIf { it.isNotBlank() },
+                            destinationLat = o.takeIf { it.has("destinationLat") && !it.isNull("destinationLat") }?.optDouble("destinationLat"),
+                            destinationLon = o.takeIf { it.has("destinationLon") && !it.isNull("destinationLon") }?.optDouble("destinationLon"),
+                            destinationCity = o.optString("destinationCity").takeIf { it.isNotBlank() },
+                            distanceToDemandKm = o.takeIf { it.has("distanceToDemandKm") && !it.isNull("distanceToDemandKm") }?.optDouble("distanceToDemandKm"),
+                            demandZoneName = o.optString("demandZoneName").takeIf { it.isNotBlank() },
+                            smartScore = o.optInt("smartScore", 0),
+                            recommendation = runCatching { RideRecommendation.valueOf(o.optString("recommendation", RideRecommendation.CAUTION.name)) }.getOrDefault(RideRecommendation.CAUTION)
                         )
                     )
                 }
@@ -87,17 +115,14 @@ object RideHistoryStore {
         val arr = JSONArray()
         entries.forEach { e ->
             arr.put(JSONObject().apply {
-                put("id", e.id)
-                put("acceptedAt", e.acceptedAt)
-                put("fare", e.fare)
-                put("totalKm", e.totalKm)
-                put("totalMin", e.totalMin)
-                put("analysisPerKm", e.analysisPerKm)
-                put("analysisPerHour", e.analysisPerHour)
-                put("estimatedProfit", e.estimatedProfit)
-                put("rating", e.rating.name)
-                put("possibleEmptyReturn", e.possibleEmptyReturn)
-                put("emptyReturnKm", e.emptyReturnKm)
+                put("id", e.id); put("acceptedAt", e.acceptedAt); put("fare", e.fare); put("totalKm", e.totalKm); put("totalMin", e.totalMin)
+                put("analysisPerKm", e.analysisPerKm); put("analysisPerHour", e.analysisPerHour); put("estimatedProfit", e.estimatedProfit)
+                put("rating", e.rating.name); put("possibleEmptyReturn", e.possibleEmptyReturn); put("emptyReturnKm", e.emptyReturnKm)
+                put("destinationText", e.destinationText ?: JSONObject.NULL); put("destinationCity", e.destinationCity ?: JSONObject.NULL)
+                put("demandZoneName", e.demandZoneName ?: JSONObject.NULL); put("smartScore", e.smartScore); put("recommendation", e.recommendation.name)
+                if (e.destinationLat != null) put("destinationLat", e.destinationLat) else put("destinationLat", JSONObject.NULL)
+                if (e.destinationLon != null) put("destinationLon", e.destinationLon) else put("destinationLon", JSONObject.NULL)
+                if (e.distanceToDemandKm != null) put("distanceToDemandKm", e.distanceToDemandKm) else put("distanceToDemandKm", JSONObject.NULL)
             })
         }
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(KEY, arr.toString()).apply()

@@ -25,6 +25,7 @@ import android.widget.Toast
 import com.rotalucro.app.MainActivity
 import com.rotalucro.app.R
 import com.rotalucro.app.calculator.OfferRating
+import com.rotalucro.app.calculator.RideRecommendation
 import com.rotalucro.app.data.RideHistoryStore
 import com.rotalucro.app.data.SettingsStore
 import com.rotalucro.app.ocr.OcrCaptureService
@@ -265,6 +266,12 @@ class RideAccessibilityService : AccessibilityService() {
         val possibleReturn = intent.getBooleanExtra(RideOverlayBus.EXTRA_EMPTY_RETURN, false)
         val returnKm = intent.getDoubleExtra(RideOverlayBus.EXTRA_EMPTY_RETURN_KM, 0.0)
         val rating = runCatching { OfferRating.valueOf(intent.getStringExtra(RideOverlayBus.EXTRA_RATING).orEmpty()) }.getOrDefault(OfferRating.ATTENTION)
+        val smartScore = intent.getIntExtra(RideOverlayBus.EXTRA_SMART_SCORE, 0)
+        val recommendation = runCatching { RideRecommendation.valueOf(intent.getStringExtra(RideOverlayBus.EXTRA_RECOMMENDATION).orEmpty()) }.getOrDefault(RideRecommendation.CAUTION)
+        val demandDistance = intent.getDoubleExtra(RideOverlayBus.EXTRA_DEMAND_DISTANCE, -1.0)
+        val demandClass = intent.getStringExtra(RideOverlayBus.EXTRA_DEMAND_CLASS).orEmpty()
+        val demandZone = intent.getStringExtra(RideOverlayBus.EXTRA_DEMAND_ZONE).orEmpty()
+        val outsideCity = intent.getBooleanExtra(RideOverlayBus.EXTRA_OUTSIDE_CITY, false)
 
         val accent = safeColor(when (rating) {
             OfferRating.BAD -> settings.overlayBadHex
@@ -278,7 +285,11 @@ class RideAccessibilityService : AccessibilityService() {
         val backgroundHex = safeColor(settings.overlayBackgroundHex, "#FFFFFF")
         val textColor = safeColor(settings.overlayTextHex, "#0F172A")
         val secondary = withAlpha(textColor, 0.72f)
-        val ratingLabel = when (rating) { OfferRating.BAD -> "RUIM"; OfferRating.ATTENTION -> "MÉDIA"; OfferRating.GOOD -> "ÓTIMA" }
+        val ratingLabel = when (recommendation) {
+            RideRecommendation.ACCEPT -> "ACEITAR"
+            RideRecommendation.CAUTION -> "ATENÇÃO"
+            RideRecommendation.REJECT -> "RECUSAR"
+        }
         val scale = settings.overlayScalePercent.coerceIn(75, 135) / 100f
         fun sp(base: Float) = base * scale
         fun pad(base: Int) = (dp(base) * scale).toInt().coerceAtLeast(1)
@@ -311,8 +322,16 @@ class RideAccessibilityService : AccessibilityService() {
                 setTextColor(Color.parseColor(accent)); textSize = sp(11.8f); typeface = Typeface.DEFAULT_BOLD; setPadding(0, pad(4), 0, 0)
             })
         }
+        if (demandDistance >= 0.0) {
+            card.addView(TextView(this).apply {
+                val zone = if (demandZone.isNotBlank()) " • $demandZone" else ""
+                val city = if (outsideCity) " • fora da cidade" else ""
+                text = "📍 ${oneDecimal(demandDistance)} km da demanda • $demandClass$zone$city"
+                setTextColor(Color.parseColor(secondary)); textSize = sp(11.8f); typeface = Typeface.DEFAULT_BOLD; setPadding(0, pad(4), 0, 0)
+            })
+        }
         card.addView(TextView(this).apply {
-            text = "$thresholdName  •  mín ${money(min)}  •  ótima ${money(excellent)}  •  lucro est. ${money(profit)}"
+            text = "🧠 Score $smartScore/100  •  $thresholdName  •  mín ${money(min)}  •  ótima ${money(excellent)}  •  lucro ${money(profit)}"
             setTextColor(Color.parseColor(secondary)); textSize = sp(11.2f); setPadding(0, pad(3), 0, 0)
         })
 

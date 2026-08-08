@@ -9,6 +9,8 @@ data class RideOffer(
     val surgeMultiplier: Double? = null,
     val dynamicBaseFare: Double? = null,
     val productName: String? = null,
+    val pickupLocationText: String? = null,
+    val destinationLocationText: String? = null,
     val sourceText: List<String> = emptyList()
 )
 
@@ -49,6 +51,34 @@ data class ScheduledKmThreshold(
     )
 }
 
+enum class DemandLevel { UNKNOWN, LOW, MEDIUM, HIGH, VERY_HIGH }
+
+enum class DemandDistanceClass(val label: String) {
+    EXCELLENT("Excelente"),
+    GOOD("Boa"),
+    ATTENTION("Atenção"),
+    FAR("Afastada"),
+    BAD("Ruim"),
+    VERY_BAD("Muito ruim"),
+    UNKNOWN("Sem localização")
+}
+
+enum class RideRecommendation { ACCEPT, CAUTION, REJECT }
+
+data class DemandAssessment(
+    val destinationText: String? = null,
+    val destinationLatitude: Double? = null,
+    val destinationLongitude: Double? = null,
+    val destinationCity: String? = null,
+    val nearestDemandZoneName: String? = null,
+    val distanceToDemandKm: Double? = null,
+    val distanceClass: DemandDistanceClass = DemandDistanceClass.UNKNOWN,
+    val demandLevel: DemandLevel = DemandLevel.UNKNOWN,
+    val learnedConfidence: Int = 0,
+    val outsideBaseCity: Boolean = false,
+    val source: String = "Sem dados"
+)
+
 data class DriverSettings(
     val defaultMinimumPerKm: Double = 1.20,
     val defaultExcellentPerKm: Double = 1.80,
@@ -68,10 +98,18 @@ data class DriverSettings(
     val overlayBadHex: String = "#EF4444",
     val overlayAttentionHex: String = "#F59E0B",
     val overlayGoodHex: String = "#22C55E",
-    // Retorno vazio / viagem longa
+    // Retorno vazio legado / fallback
     val emptyReturnEnabled: Boolean = true,
     val emptyReturnTripKmThreshold: Double = 10.0,
-    val emptyReturnDistanceFactor: Double = 1.0
+    val emptyReturnDistanceFactor: Double = 1.0,
+    // Demanda inteligente
+    val smartDemandEnabled: Boolean = true,
+    val baseCity: String = "Itajaí, SC",
+    val demandReturnFactor: Double = 1.0,
+    val premiumMin5To7Km: Double = 1.40,
+    val premiumMin7To9Km: Double = 1.60,
+    val premiumMin9PlusKm: Double = 1.80,
+    val demandLearningEnabled: Boolean = true
 ) {
     fun activeKmThreshold(minuteOfDay: Int): KmThreshold = scheduledThresholds
         .firstOrNull { it.matches(minuteOfDay) }
@@ -111,6 +149,11 @@ data class RideResult(
     val estimatedProfit: Double,
     val profitPerKm: Double,
     val activeThreshold: KmThreshold,
+    val effectiveMinimumPerKm: Double,
+    val effectiveExcellentPerKm: Double,
+    val demandAssessment: DemandAssessment? = null,
+    val smartScore: Int = 0,
+    val recommendation: RideRecommendation = RideRecommendation.CAUTION,
     val rating: OfferRating
 ) {
     val fare: Double get() = offer.fare

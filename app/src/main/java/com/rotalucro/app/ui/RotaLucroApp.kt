@@ -29,12 +29,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rotalucro.app.R
 import com.rotalucro.app.calculator.DriverSettings
+import com.rotalucro.app.calculator.DemandLevel
 import com.rotalucro.app.calculator.RideCalculator
 import com.rotalucro.app.calculator.ScheduledKmThreshold
 import com.rotalucro.app.data.OcrDiagnostics
 import com.rotalucro.app.data.OcrDiagnosticsStore
 import com.rotalucro.app.data.RideHistoryStore
 import com.rotalucro.app.data.SettingsStore
+import com.rotalucro.app.data.DemandZoneStore
+import com.rotalucro.app.data.DemandLearningStore
 import com.rotalucro.app.runtime.RuntimeState
 import com.rotalucro.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -45,6 +48,7 @@ import java.util.Locale
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Início", Icons.Rounded.Home),
     RULES("Regras", Icons.Rounded.Tune),
+    DEMAND("Demanda", Icons.Rounded.LocationOn),
     RIDES("Corridas", Icons.Rounded.ReceiptLong),
     BOX("Box", Icons.Rounded.DashboardCustomize),
     READER("Leitor", Icons.Rounded.Visibility),
@@ -67,12 +71,16 @@ fun RotaLucroApp(
     var diagnostics by remember { mutableStateOf(OcrDiagnosticsStore.load(context)) }
     var settings by remember { mutableStateOf(SettingsStore.load(context)) }
     var history by remember { mutableStateOf(RideHistoryStore.load(context)) }
+    var demandZones by remember { mutableStateOf(DemandZoneStore.load(context)) }
+    var learnedHotspots by remember { mutableStateOf(DemandLearningStore.load(context)) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         while (true) {
             diagnostics = OcrDiagnosticsStore.load(context)
             history = RideHistoryStore.load(context)
+            learnedHotspots = DemandLearningStore.load(context)
+            if (tab != Tab.DEMAND) demandZones = DemandZoneStore.load(context)
             delay(850L)
         }
     }
@@ -131,6 +139,23 @@ fun RotaLucroApp(
                     onSave = {
                         SettingsStore.save(context, settings)
                         savedMessage = "Regras salvas"
+                    }
+                )
+                Tab.DEMAND -> DemandScreen(
+                    settings = settings,
+                    zones = demandZones,
+                    learnedHotspots = learnedHotspots,
+                    onSettingsChanged = { settings = it },
+                    onZonesChanged = { demandZones = it },
+                    onSave = {
+                        SettingsStore.save(context, settings)
+                        DemandZoneStore.save(context, demandZones)
+                        savedMessage = "Demanda inteligente salva"
+                    },
+                    onClearLearning = {
+                        DemandLearningStore.clear(context)
+                        learnedHotspots = emptyList()
+                        savedMessage = "Aprendizado limpo"
                     }
                 )
                 Tab.RIDES -> HistoryScreen(
@@ -286,6 +311,10 @@ private fun HomeScreen(
                     TextButton(onClick = onReader) { Text("Diagnóstico") }
                 }
                 Text("${money(diagnostics.analysisPerHour ?: diagnostics.grossPerHour ?: 0.0)}/h  •  ${formatTimeAgo(diagnostics.lastReadAt)}", color = MutedText, fontSize = 13.sp)
+                if (diagnostics.smartScore != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("🧠 Score ${diagnostics.smartScore}/100 • ${recommendationPt(diagnostics.recommendation)}${diagnostics.distanceToDemandKm?.let { " • 📍 ${one(it)} km da demanda" } ?: ""}", color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
                 if (diagnostics.possibleEmptyReturn) {
                     Spacer(Modifier.height(7.dp))
                     Text("⚠ Retorno vazio considerado: +${one(diagnostics.emptyReturnKm ?: 0.0)} km", color = BrandRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -417,6 +446,10 @@ private fun ReaderScreen(
             ParseLine("R$/KM EFETIVO", diagnostics.analysisPerKm?.let { "${money(it)}/km" })
             ParseLine("R$/HORA EFETIVO", diagnostics.analysisPerHour?.let { "${money(it)}/h" })
             if (diagnostics.possibleEmptyReturn) ParseLine("RETORNO VAZIO", diagnostics.emptyReturnKm?.let { "+${one(it)} km" })
+            ParseLine("DESTINO OCR", diagnostics.destinationText)
+            ParseLine("ATÉ DEMANDA", diagnostics.distanceToDemandKm?.let { "${one(it)} km • ${diagnostics.demandClass.orEmpty()}" })
+            ParseLine("REGIÃO", diagnostics.demandZoneName)
+            ParseLine("SCORE", diagnostics.smartScore?.let { "$it/100 • ${recommendationPt(diagnostics.recommendation)}" })
             ParseLine("BOX", if (diagnostics.boxDisplayed) "Exibido" else null)
         }
 
@@ -490,11 +523,148 @@ private fun SettingsScreen(
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
             Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar ajustes", fontWeight = FontWeight.Bold)
         }
-        Text("Privacidade: o app não salva capturas de tela. O OCR é processado localmente e o diagnóstico guarda apenas números/textos úteis da oferta, não endereços.", color = MutedText, fontSize = 11.sp)
+        Text("Privacidade: o app não salva capturas de tela. O OCR é processado localmente. Para a demanda inteligente, o texto do destino e a localização geocodificada podem ser guardados localmente no histórico e nas áreas aprendidas.", color = MutedText, fontSize = 11.sp)
         Spacer(Modifier.height(8.dp))
     }
 }
 
+
+@Composable
+private fun DemandScreen(
+    settings: DriverSettings,
+    zones: List<DemandZoneStore.Zone>,
+    learnedHotspots: List<DemandLearningStore.Hotspot>,
+    onSettingsChanged: (DriverSettings) -> Unit,
+    onZonesChanged: (List<DemandZoneStore.Zone>) -> Unit,
+    onSave: () -> Unit,
+    onClearLearning: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Demanda inteligente", "O RotaLucro considera onde a corrida termina, o retorno provável e o que aprende com suas próximas ofertas.")
+        CardBlock {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Análise por região", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Ative para ajustar o mínimo por km e estimar retorno até uma região de demanda.", color = MutedText, fontSize = 12.sp)
+                }
+                Switch(settings.smartDemandEnabled, { onSettingsChanged(settings.copy(smartDemandEnabled = it)) })
+            }
+            Spacer(Modifier.height(10.dp))
+            TextField(
+                value = settings.baseCity,
+                onValueChange = { onSettingsChanged(settings.copy(baseCity = it)) },
+                label = { Text("Cidade base") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(10.dp))
+            DecimalField("Fator de retorno até a demanda", settings.demandReturnFactor, Modifier.fillMaxWidth()) {
+                onSettingsChanged(settings.copy(demandReturnFactor = it.coerceIn(0.0, 2.0)))
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("Prêmio mínimo por afastamento", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DecimalField("5–7 km", settings.premiumMin5To7Km, Modifier.weight(1f)) { onSettingsChanged(settings.copy(premiumMin5To7Km = it)) }
+                DecimalField("7–9 km", settings.premiumMin7To9Km, Modifier.weight(1f)) { onSettingsChanged(settings.copy(premiumMin7To9Km = it)) }
+                DecimalField("9 km+", settings.premiumMin9PlusKm, Modifier.weight(1f)) { onSettingsChanged(settings.copy(premiumMin9PlusKm = it)) }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("0–3 km 🟢 Excelente  •  3–5 km 🟢 Boa  •  5–7 km 🟡 Atenção  •  7–9 km 🟠 Afastada  •  9–12 km 🔴 Ruim  •  12 km+ 🔴🔴 Muito ruim", color = MutedText, fontSize = 11.sp)
+        }
+
+        CardBlock {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Aprender com seu uso", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Quando uma nova oferta chega pouco depois do fim estimado de uma corrida salva, a área ganha confiança de demanda.", color = MutedText, fontSize = 12.sp)
+                }
+                Switch(settings.demandLearningEnabled, { onSettingsChanged(settings.copy(demandLearningEnabled = it)) })
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Áreas aprendidas: ${learnedHotspots.size}", fontWeight = FontWeight.SemiBold)
+            if (learnedHotspots.isNotEmpty()) {
+                Text("Maior confiança: ${learnedHotspots.maxOf { it.confidence }}%", color = BrandGreen, fontSize = 12.sp)
+                TextButton(onClick = onClearLearning, contentPadding = PaddingValues(0.dp)) { Text("Limpar aprendizado") }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Regiões de demanda", fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text("Cadastre áreas que costumam gerar novas corridas. O endereço de referência vira o centro da região.", color = MutedText, fontSize = 12.sp)
+            }
+            FilledTonalButton(onClick = {
+                onZonesChanged(zones + DemandZoneStore.Zone(
+                    id = System.currentTimeMillis(),
+                    name = "Nova região",
+                    referenceAddress = "",
+                    radiusKm = 2.0,
+                    demandLevel = DemandLevel.HIGH
+                ))
+            }) { Icon(Icons.Rounded.Add, null); Text("Adicionar") }
+        }
+
+        if (zones.isEmpty()) {
+            CardBlock {
+                Text("Nenhuma região cadastrada", fontWeight = FontWeight.Bold)
+                Text("Adicione pontos como Centro, Beira-Rio, universidades, bairros ou áreas onde você sabe que costuma tocar corrida. O app também vai criando áreas aprendidas com seu histórico.", color = MutedText, fontSize = 12.sp)
+            }
+        }
+        zones.forEachIndexed { index, zone ->
+            DemandZoneCard(zone = zone, onChange = { updated ->
+                val list = zones.toMutableList(); list[index] = updated; onZonesChanged(list)
+            }, onDelete = {
+                onZonesChanged(zones.filterNot { it.id == zone.id })
+            })
+        }
+        Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
+            Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar demanda inteligente", fontWeight = FontWeight.Bold)
+        }
+        Text("Importante: o RotaLucro não recebe o mapa de calor da 99. A inteligência usa suas regiões cadastradas, geocodificação do destino reconhecido pelo OCR e aprendizado do seu próprio histórico.", color = MutedText, fontSize = 11.sp)
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun DemandZoneCard(
+    zone: DemandZoneStore.Zone,
+    onChange: (DemandZoneStore.Zone) -> Unit,
+    onDelete: () -> Unit
+) {
+    CardBlock {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextField(zone.name, { onChange(zone.copy(name = it)) }, label = { Text("Nome da região") }, singleLine = true, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            Switch(zone.enabled, { onChange(zone.copy(enabled = it)) })
+        }
+        Spacer(Modifier.height(9.dp))
+        TextField(zone.referenceAddress, { onChange(zone.copy(referenceAddress = it, latitude = null, longitude = null)) }, label = { Text("Endereço de referência") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(9.dp))
+        TextField(zone.keywords, { onChange(zone.copy(keywords = it)) }, label = { Text("Palavras-chave do destino (separe por ;)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(9.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            DecimalField("Raio km", zone.radiusKm, Modifier.weight(1f)) { onChange(zone.copy(radiusKm = it.coerceIn(0.3, 20.0))) }
+            OutlinedButton(onClick = {
+                val next = when (zone.demandLevel) {
+                    DemandLevel.LOW -> DemandLevel.MEDIUM
+                    DemandLevel.MEDIUM -> DemandLevel.HIGH
+                    DemandLevel.HIGH -> DemandLevel.VERY_HIGH
+                    DemandLevel.VERY_HIGH -> DemandLevel.LOW
+                    DemandLevel.UNKNOWN -> DemandLevel.HIGH
+                }
+                onChange(zone.copy(demandLevel = next))
+            }, modifier = Modifier.weight(1f).height(56.dp)) {
+                Text("Demanda: ${when(zone.demandLevel) { DemandLevel.VERY_HIGH -> "Muito alta"; DemandLevel.HIGH -> "Alta"; DemandLevel.MEDIUM -> "Média"; DemandLevel.LOW -> "Baixa"; else -> "Alta" }}", fontSize = 11.sp)
+            }
+        }
+        if (zone.latitude != null && zone.longitude != null) {
+            Text("Localização resolvida ✓", color = BrandGreen, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
+        } else if (zone.referenceAddress.isNotBlank()) {
+            Text("Será localizada automaticamente na próxima análise.", color = MutedText, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
+        }
+        TextButton(onClick = onDelete, contentPadding = PaddingValues(0.dp), modifier = Modifier.align(Alignment.End)) { Text("Excluir região", color = BrandRed) }
+    }
+}
 
 @Composable
 private fun HistoryScreen(
@@ -548,6 +718,8 @@ private fun HistoryScreen(
                     Spacer(Modifier.height(8.dp))
                     Text("${one(item.totalKm)} km • ${item.totalMin} min • ${money(item.analysisPerHour)}/h • lucro est. ${money(item.estimatedProfit)}", color = MutedText, fontSize = 12.sp)
                     if (item.possibleEmptyReturn) Text("⚠ Análise considerou +${one(item.emptyReturnKm)} km de retorno vazio", color = BrandRed, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+                    if (item.distanceToDemandKm != null) Text("📍 ${one(item.distanceToDemandKm)} km da demanda${item.demandZoneName?.let { " • $it" } ?: ""} • score ${item.smartScore}/100", color = MutedText, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                    if (!item.destinationText.isNullOrBlank()) Text("Destino OCR: ${item.destinationText}", color = MutedText, fontSize = 10.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     TextButton(onClick = { onDelete(item.id) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.align(Alignment.End)) { Text("Excluir") }
                 }
             }
@@ -799,6 +971,13 @@ private fun parseTime(value: String): Int? {
     if (h !in 0..23 || m !in 0..59) return null
     return h * 60 + m
 }
+private fun recommendationPt(raw: String?): String = when (raw) {
+    "ACCEPT" -> "ACEITAR"
+    "REJECT" -> "RECUSAR"
+    "CAUTION" -> "ATENÇÃO"
+    else -> raw.orEmpty()
+}
+
 private fun money(value: Double): String = "R$ ${two(value)}"
 private fun two(value: Double): String = "%.2f".format(Locale.US, value).replace('.', ',')
 private fun one(value: Double): String = "%.1f".format(Locale.US, value).replace('.', ',')
