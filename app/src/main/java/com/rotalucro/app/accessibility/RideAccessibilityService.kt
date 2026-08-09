@@ -232,7 +232,7 @@ class RideAccessibilityService : AccessibilityService() {
         val scroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            addView(row, HorizontalScrollView.LayoutParams(HorizontalScrollView.LayoutParams.WRAP_CONTENT, dp(46)))
+            addView(row, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dp(46)))
         }
         outer.addView(scroll, LinearLayout.LayoutParams(-1, dp(48)))
 
