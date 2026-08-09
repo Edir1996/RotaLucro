@@ -18,6 +18,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -178,57 +179,90 @@ class RideAccessibilityService : AccessibilityService() {
     private fun toggleMenu() { if (menu == null) showMenu() else hideMenu() }
 
     private fun showMenu() {
-        val bubbleP = bubbleParams ?: return
-        val panel = LinearLayout(this).apply {
+        val metrics = resources.displayMetrics
+        val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = roundedDrawable("#FFFFFF", 18f, "#E2E8F0", dp(1))
-            elevation = dp(12).toFloat()
+            setPadding(dp(10), dp(8), dp(10), dp(9))
+            background = roundedDrawable("#FDFEFF", 18f, "#D8E4F5", dp(1))
+            elevation = dp(14).toFloat()
         }
-        panel.addView(TextView(this).apply {
-            text = "RotaLucro"; setTextColor(Color.parseColor("#0F172A")); textSize = 18f; typeface = Typeface.DEFAULT_BOLD
-        })
-        panel.addView(TextView(this).apply {
-            text = if (RuntimeState.captureActive) "OCR ativo • monitorando" else "OCR pausado"
-            setTextColor(Color.parseColor(if (RuntimeState.captureActive) "#16A34A" else "#64748B"))
-            textSize = 12f; setPadding(0, dp(2), 0, dp(10))
-        })
 
-        addMenuButton(panel, if (RuntimeState.captureActive) "Desativar OCR" else "Ativar OCR") {
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), dp(6))
+        }
+        header.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher_foreground)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(30), dp(30)))
+        header.addView(TextView(this).apply {
+            text = if (RuntimeState.captureActive) "RotaLucro • OCR ativo" else "RotaLucro • OCR pausado"
+            setTextColor(Color.parseColor(if (RuntimeState.captureActive) "#15803D" else "#475569"))
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(7), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, dp(30), 1f))
+        header.addView(TextView(this).apply {
+            text = "×"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 22f
+            setOnClickListener { hideMenu() }
+        }, LinearLayout.LayoutParams(dp(36), dp(30)))
+        outer.addView(header, LinearLayout.LayoutParams(-1, dp(36)))
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        addTopMenuButton(row, if (RuntimeState.captureActive) "Pausar OCR" else "Ativar OCR") {
             if (RuntimeState.captureActive) OcrCaptureService.stop(this) else openApp(true)
             updateBubbleStatus(); hideMenu()
         }
-        addMenuButton(panel, "Ler agora") { OcrCaptureService.scanNow(this); hideMenu() }
-        addMenuButton(panel, "Salvar última como aceita") {
+        addTopMenuButton(row, "Ler agora") { OcrCaptureService.scanNow(this); hideMenu() }
+        addTopMenuButton(row, "Salvar aceita") {
             val saved = RideHistoryStore.saveLatestAsAccepted(this)
-            Toast.makeText(this, if (saved != null) "Corrida salva no histórico" else "Nenhuma oferta recente para salvar", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (saved != null) "Corrida salva e sincronizando" else "Nenhuma oferta recente", Toast.LENGTH_SHORT).show()
             hideMenu()
         }
-        addMenuButton(panel, "Abrir RotaLucro") { openApp(false); hideMenu() }
-        addMenuButton(panel, "Ocultar bolha", destructive = true) { hideMenu(); hideBubble() }
+        addTopMenuButton(row, "Abrir app") { openApp(false); hideMenu() }
+        addTopMenuButton(row, "Ocultar bolha", destructive = true) { hideMenu(); hideBubble() }
 
-        val panelWidth = dp(238)
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(row, HorizontalScrollView.LayoutParams(HorizontalScrollView.LayoutParams.WRAP_CONTENT, dp(46)))
+        }
+        outer.addView(scroll, LinearLayout.LayoutParams(-1, dp(48)))
+
         val params = WindowManager.LayoutParams(
-            panelWidth, WindowManager.LayoutParams.WRAP_CONTENT,
+            (metrics.widthPixels - dp(16)).coerceAtLeast(dp(300)), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (bubbleP.x - panelWidth + dp(62)).coerceIn(dp(8), (resources.displayMetrics.widthPixels - panelWidth - dp(8)).coerceAtLeast(dp(8)))
-            y = (bubbleP.y + dp(72)).coerceAtMost(resources.displayMetrics.heightPixels - dp(390))
+            x = dp(8)
+            y = dp(52)
         }
-        windowManager.addView(panel, params); menu = panel
+        windowManager.addView(outer, params)
+        menu = outer
     }
 
-    private fun addMenuButton(parent: LinearLayout, label: String, destructive: Boolean = false, action: () -> Unit) {
+    private fun addTopMenuButton(parent: LinearLayout, label: String, destructive: Boolean = false, action: () -> Unit) {
         parent.addView(TextView(this).apply {
             text = label
-            setTextColor(Color.parseColor(if (destructive) "#DC2626" else "#0F172A"))
-            textSize = 14.5f; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = roundedDrawable(if (destructive) "#FEF2F2" else "#F8FAFC", 11f)
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(if (destructive) "#B91C1C" else "#0F172A"))
+            textSize = 12.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(13), 0, dp(13), 0)
+            background = roundedDrawable(if (destructive) "#FEF2F2" else "#EEF4FF", 13f)
             setOnClickListener { action() }
-        }, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(7) })
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)).apply {
+            rightMargin = dp(7)
+        })
     }
 
     private fun hideMenu() { removeView(menu); menu = null }

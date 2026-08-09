@@ -3,6 +3,7 @@ package com.rotalucro.app.data
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import com.rotalucro.app.cloud.CloudApiClient
 import kotlin.math.round
 
 /** Learns only positive demand signals: a new offer received soon after the expected drop-off. */
@@ -73,6 +74,7 @@ object DemandLearningStore {
 
     fun clear(context: Context) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(KEY_HOTSPOTS).remove(KEY_PENDING).apply()
+        CloudApiClient.syncAsync(context)
     }
 
     private fun addSuccess(context: Context, lat: Double, lon: Double, now: Long) {
@@ -92,6 +94,7 @@ object DemandLearningStore {
             items.add(Hotspot(keyLat, keyLon, 1, now))
         }
         persist(context, items.sortedByDescending { it.lastSeenAt }.take(MAX_HOTSPOTS))
+        CloudApiClient.syncAsync(context)
     }
 
     private fun persist(context: Context, items: List<Hotspot>) {

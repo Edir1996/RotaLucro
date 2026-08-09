@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rotalucro.app.R
 import com.rotalucro.app.calculator.DriverSettings
+import com.rotalucro.app.cloud.AccountStore
+import com.rotalucro.app.cloud.CloudApiClient
+import com.rotalucro.app.cloud.CloudSession
 import com.rotalucro.app.calculator.DemandLevel
 import com.rotalucro.app.calculator.RideCalculator
 import com.rotalucro.app.calculator.ScheduledKmThreshold
@@ -74,6 +77,23 @@ fun RotaLucroApp(
     var demandZones by remember { mutableStateOf(DemandZoneStore.load(context)) }
     var learnedHotspots by remember { mutableStateOf(DemandLearningStore.load(context)) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
+    var cloudSession by remember { mutableStateOf(AccountStore.load(context)) }
+
+    if (cloudSession == null) {
+        LoginScreen(
+            onLogin = { username, password, done ->
+                CloudApiClient.loginAsync(context, username, password) { result ->
+                    if (result.ok && result.session != null) cloudSession = result.session
+                    done(result.ok, result.message)
+                }
+            }
+        )
+        return
+    }
+
+    LaunchedEffect(cloudSession?.token) {
+        CloudApiClient.syncAsync(context)
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -138,7 +158,8 @@ fun RotaLucroApp(
                     onSettingsChanged = { settings = it },
                     onSave = {
                         SettingsStore.save(context, settings)
-                        savedMessage = "Regras salvas"
+                        CloudApiClient.syncAsync(context)
+                        savedMessage = "Regras salvas e sincronizadas"
                     }
                 )
                 Tab.DEMAND -> DemandScreen(
@@ -150,7 +171,8 @@ fun RotaLucroApp(
                     onSave = {
                         SettingsStore.save(context, settings)
                         DemandZoneStore.save(context, demandZones)
-                        savedMessage = "Demanda inteligente salva"
+                        CloudApiClient.syncAsync(context)
+                        savedMessage = "Demanda inteligente salva e sincronizada"
                     },
                     onClearLearning = {
                         DemandLearningStore.clear(context)
@@ -166,7 +188,7 @@ fun RotaLucroApp(
                 Tab.BOX -> BoxSettingsScreen(
                     settings = settings,
                     onSettingsChanged = { settings = it },
-                    onSave = { SettingsStore.save(context, settings); savedMessage = "Layout do box salvo" },
+                    onSave = { SettingsStore.save(context, settings); CloudApiClient.syncAsync(context); savedMessage = "Layout do box salvo" },
                     onPreview = { SettingsStore.save(context, settings); onPreviewBox(); savedMessage = "Prévia exibida" }
                 )
                 Tab.READER -> ReaderScreen(
@@ -181,12 +203,104 @@ fun RotaLucroApp(
                     onSettingsChanged = { settings = it },
                     onSave = {
                         SettingsStore.save(context, settings)
-                        savedMessage = "Ajustes salvos"
+                        CloudApiClient.syncAsync(context)
+                        savedMessage = "Ajustes salvos e sincronizados"
                     },
                     onOpenAccessibility = onOpenAccessibility,
                     onShowBubble = onShowBubble,
-                    onHideBubble = onHideBubble
+                    onHideBubble = onHideBubble,
+                    cloudSession = cloudSession!!,
+                    onSync = {
+                        CloudApiClient.syncAsync(context) { result -> savedMessage = result.message }
+                    },
+                    onLogout = {
+                        onStopCapture()
+                        onHideBubble()
+                        CloudApiClient.logoutAsync(context)
+                        cloudSession = null
+                    }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoginScreen(
+    onLogin: (String, String, (Boolean, String) -> Unit) -> Unit
+) {
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var success by remember { mutableStateOf(false) }
+
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.verticalGradient(listOf(Color(0xFF07111F), Color(0xFF0F2250), Color(0xFF1D4ED8)))
+        ).padding(22.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 480.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = Color.White,
+            shadowElevation = 18.dp
+        ) {
+            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(76.dp).clip(CircleShape).background(Color(0xFFEEF4FF)), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "RotaLucro", tint = Color.Unspecified, modifier = Modifier.size(72.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("RotaLucro", fontSize = 28.sp, fontWeight = FontWeight.Black, color = BrandNavy)
+                Text("Entre com sua conta", color = MutedText, fontSize = 13.sp)
+                Spacer(Modifier.height(22.dp))
+                TextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Usuário") },
+                    leadingIcon = { Icon(Icons.Rounded.Person, null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                TextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Senha") },
+                    leadingIcon = { Icon(Icons.Rounded.Lock, null) },
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (message != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Surface(shape = RoundedCornerShape(12.dp), color = if (success) Color(0xFFECFDF5) else Color(0xFFFEF2F2)) {
+                        Text(message!!, color = if (success) Color(0xFF15803D) else Color(0xFFB91C1C), fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(11.dp))
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        loading = true
+                        message = null
+                        onLogin(username, password) { ok, msg ->
+                            success = ok
+                            message = msg
+                            loading = false
+                        }
+                    },
+                    enabled = !loading && username.isNotBlank() && password.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(15.dp)
+                ) {
+                    if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
+                    else Icon(Icons.Rounded.Login, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (loading) "Conectando..." else "Entrar", fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Use o usuário e a senha fornecidos pelo administrador do RotaLucro.", color = MutedText, fontSize = 11.sp)
             }
         }
     }
@@ -475,7 +589,10 @@ private fun SettingsScreen(
     onSave: () -> Unit,
     onOpenAccessibility: () -> Unit,
     onShowBubble: () -> Unit,
-    onHideBubble: () -> Unit
+    onHideBubble: () -> Unit,
+    cloudSession: CloudSession,
+    onSync: () -> Unit,
+    onLogout: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Custos e sistema", "Ajuste os custos para melhorar a estimativa de lucro.")
@@ -520,10 +637,30 @@ private fun SettingsScreen(
                 OutlinedButton(onClick = onHideBubble, modifier = Modifier.weight(1f)) { Text("Ocultar bolha") }
             }
         }
+        CardBlock {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFEEF4FF)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.CloudDone, null, tint = BrandBlue)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Conta e painel web", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(cloudSession.displayName.ifBlank { cloudSession.username }, fontWeight = FontWeight.SemiBold)
+                    Text("Conta conectada ao RotaLucro Cloud", color = MutedText, fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(onClick = onSync, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Sync, null); Spacer(Modifier.width(6.dp)); Text("Sincronizar") }
+                OutlinedButton(onClick = onLogout, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Logout, null); Spacer(Modifier.width(6.dp)); Text("Sair") }
+            }
+            Text("As corridas aceitas, áreas aprendidas e regiões de demanda são enviadas para o painel da sua conta.", color = MutedText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
             Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar ajustes", fontWeight = FontWeight.Bold)
         }
-        Text("Privacidade: o app não salva capturas de tela. O OCR é processado localmente. Para a demanda inteligente, o texto do destino e a localização geocodificada podem ser guardados localmente no histórico e nas áreas aprendidas.", color = MutedText, fontSize = 11.sp)
+        Text("Privacidade: o app não salva capturas de tela. O OCR é processado localmente. Depois do login, somente os dados estruturados das corridas salvas, regiões e áreas aprendidas são sincronizados com o seu painel; as imagens da tela não são enviadas.", color = MutedText, fontSize = 11.sp)
         Spacer(Modifier.height(8.dp))
     }
 }

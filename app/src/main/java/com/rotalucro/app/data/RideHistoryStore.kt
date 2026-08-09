@@ -3,6 +3,7 @@ package com.rotalucro.app.data
 import android.content.Context
 import com.rotalucro.app.calculator.OfferRating
 import com.rotalucro.app.calculator.RideRecommendation
+import com.rotalucro.app.cloud.CloudApiClient
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -64,9 +65,10 @@ object RideHistoryStore {
                 kotlin.math.abs(it.totalKm - entry.totalKm) < 0.01 &&
                 entry.acceptedAt - it.acceptedAt < 90_000L
         }
-        if (duplicate != null) return duplicate
+        if (duplicate != null) { CloudApiClient.syncAsync(context); return duplicate }
         items.add(0, entry)
         persist(context, items.take(MAX_ITEMS))
+        CloudApiClient.syncAsync(context)
         if (SettingsStore.load(context).demandLearningEnabled) {
             DemandLearningStore.startPending(context, entry.destinationLat, entry.destinationLon, entry.acceptedAt, entry.totalMin)
         }
@@ -108,8 +110,14 @@ object RideHistoryStore {
         }.getOrDefault(emptyList())
     }
 
-    fun delete(context: Context, id: Long) = persist(context, load(context).filterNot { it.id == id })
-    fun clear(context: Context) = persist(context, emptyList())
+    fun delete(context: Context, id: Long) {
+        persist(context, load(context).filterNot { it.id == id })
+        CloudApiClient.syncAsync(context)
+    }
+    fun clear(context: Context) {
+        persist(context, emptyList())
+        CloudApiClient.syncAsync(context)
+    }
 
     private fun persist(context: Context, entries: List<Entry>) {
         val arr = JSONArray()

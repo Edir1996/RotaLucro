@@ -1,35 +1,50 @@
-# RotaLucro 0.8.0 — Smart Demand
+# RotaLucro Android 0.9.1 — Cloud (servidor fixo)
 
-Aplicativo Android em Kotlin/Jetpack Compose que usa captura de tela autorizada pelo Android + OCR local (ML Kit) para analisar ofertas da 99 e mostrar um box flutuante com rentabilidade.
+Aplicativo Android para análise de ofertas da 99 com OCR local, regras por horário, demanda inteligente, retorno vazio, histórico e integração com o painel PHP/MySQL RotaLucro Cloud.
 
-## Novidades 0.8.0
+## Novidades da 0.9.1
 
-### Demanda inteligente
-O app não depende apenas do R$/km bruto. Ele pode reconhecer o texto do destino, geocodificar o endereço e comparar o ponto de chegada com regiões de demanda cadastradas pelo usuário.
+- Login obrigatório usando a mesma conta criada pelo administrador do painel web.
+- Servidor Cloud embutido no APK; o motorista vê apenas os campos **Usuário** e **Senha**.
+- URL temporária configurada em `cloud/ServerConfig.kt`.
+- Sincronização de corridas aceitas, hotspots aprendidos, regiões de demanda e configurações.
+- Cada instalação possui um `device_id` próprio.
+- A bolha flutuante continua com a logomarca RotaLucro.
+- Ao tocar na bolha, o menu agora abre **no topo da tela, horizontalmente**.
+- Ações rápidas: ativar/pausar OCR, ler agora, salvar corrida aceita, abrir app e ocultar bolha.
+- A tela **Ajustes** mostra a conta conectada e permite sincronizar ou sair.
 
-Classificação padrão da distância do destino até a demanda:
-- 0–3 km: Excelente
-- 3–5 km: Boa
-- 5–7 km: Atenção
-- 7–9 km: Afastada
-- 9–12 km: Ruim
-- 12 km+: Muito ruim
+## Primeiro uso
 
-O mínimo por km pode subir automaticamente para destinos afastados. Valores padrão:
-- 5–7 km: R$ 1,40/km
-- 7–9 km: R$ 1,60/km
-- 9 km+: R$ 1,80/km
+1. Instale o painel web no servidor configurado no APK e crie o usuário no administrador.
+2. Abra o app.
+3. Informe somente o **usuário** e a **senha** criados no painel.
+4. Ative a Acessibilidade.
+5. Autorize a captura de tela para o OCR.
+6. Use a bolha flutuante enquanto estiver na 99.
 
-O app calcula `km_retorno_estimado` usando a distância até a região de demanda. Assim, uma oferta aparentemente boa pode ser reclassificada se houver risco de volta vazia.
+## Alterar o servidor no futuro
 
-### Score 0–100
-O score usa rentabilidade efetiva, R$/hora, distância da demanda, nível de demanda e deslocamento até o passageiro. A saída é ACEITAR, ATENÇÃO ou RECUSAR.
+Edite somente:
 
-### Aprendizado local
-Ao salvar uma corrida como aceita, o RotaLucro guarda o destino. Se uma nova oferta aparecer perto do horário estimado de término, essa área ganha confiança de demanda. O aprendizado fica apenas no aparelho.
+`app/src/main/java/com/rotalucro/app/cloud/ServerConfig.kt`
 
-## Limitação importante
-O RotaLucro não tem acesso ao mapa de calor interno nem a uma API de demanda da 99. “Demanda inteligente” significa regiões configuradas pelo usuário + sinais aprendidos do próprio histórico, não demanda oficial em tempo real.
+e troque `BASE_URL`. O endereço não é exibido ao motorista.
 
-## Build no GitHub
-Abra Actions → Android Build → Run workflow. O artefato é `RotaLucro-v0.8.0-SmartDemand-debug-apk`.
+## O que vai para o servidor
+
+O OCR continua sendo processado localmente. O app não envia screenshots. A nuvem recebe somente dados estruturados necessários aos relatórios e ao mapa: corridas salvas, coordenadas de destino quando disponíveis, hotspots, zonas e configurações.
+
+## Build pelo GitHub Actions
+
+O workflow `.github/workflows/android-build.yml` executa os testes e gera o artefato:
+
+`RotaLucro-v0.9.1-FixedServer-debug-apk`
+
+## Requisitos
+
+- Android 8.0+ (API 26)
+- Acessibilidade RotaLucro ativada
+- Autorização de captura MediaProjection
+- Internet para login/sincronização
+- Painel RotaLucro Cloud acessível por HTTPS
