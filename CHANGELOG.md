@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2
+- Corrige a compilação do menu flutuante horizontal no `RideAccessibilityService`.
+- Substitui o `HorizontalScrollView.LayoutParams` inválido por `FrameLayout.LayoutParams`.
+- Mantém o servidor temporário fixo e o login somente com usuário e senha.
+
 ## 0.9.1 — Servidor fixo
 - URL temporária do RotaLucro Cloud embutida no APK.
 - Tela de login mostra somente usuário e senha.
