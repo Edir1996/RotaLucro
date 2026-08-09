@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.3 — Aprendizado de demanda corrigido
+
+- Ao salvar uma corrida aceita, o destino vira imediatamente uma área **Em aprendizado**.
+- Uma área só influencia o score depois de receber confirmação por nova oferta próxima ao fim estimado da corrida.
+- Corrigido o aprendizado que armazenava apenas uma corrida pendente e sobrescrevia a anterior.
+- Corrigido `null` aparecendo como nome de demanda no histórico/cloud.
+- Lista visual de áreas observadas, confirmações e confiança na aba Demanda.
+
 ## 0.9.2
 - Corrige a compilação do menu flutuante horizontal no `RideAccessibilityService`.
 - Substitui o `HorizontalScrollView.LayoutParams` inválido por `FrameLayout.LayoutParams`.

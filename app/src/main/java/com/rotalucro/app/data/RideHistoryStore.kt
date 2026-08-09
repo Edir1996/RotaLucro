@@ -70,7 +70,14 @@ object RideHistoryStore {
         persist(context, items.take(MAX_ITEMS))
         CloudApiClient.syncAsync(context)
         if (SettingsStore.load(context).demandLearningEnabled) {
-            DemandLearningStore.startPending(context, entry.destinationLat, entry.destinationLon, entry.acceptedAt, entry.totalMin)
+            DemandLearningStore.recordAcceptedDestination(
+                context = context,
+                lat = entry.destinationLat,
+                lon = entry.destinationLon,
+                label = entry.destinationText,
+                acceptedAt = entry.acceptedAt,
+                totalMin = entry.totalMin
+            )
         }
         return entry
     }
@@ -95,12 +102,12 @@ object RideHistoryStore {
                             rating = runCatching { OfferRating.valueOf(o.optString("rating")) }.getOrDefault(OfferRating.ATTENTION),
                             possibleEmptyReturn = o.optBoolean("possibleEmptyReturn"),
                             emptyReturnKm = o.optDouble("emptyReturnKm"),
-                            destinationText = o.optString("destinationText").takeIf { it.isNotBlank() },
+                            destinationText = nullableString(o, "destinationText"),
                             destinationLat = o.takeIf { it.has("destinationLat") && !it.isNull("destinationLat") }?.optDouble("destinationLat"),
                             destinationLon = o.takeIf { it.has("destinationLon") && !it.isNull("destinationLon") }?.optDouble("destinationLon"),
-                            destinationCity = o.optString("destinationCity").takeIf { it.isNotBlank() },
+                            destinationCity = nullableString(o, "destinationCity"),
                             distanceToDemandKm = o.takeIf { it.has("distanceToDemandKm") && !it.isNull("distanceToDemandKm") }?.optDouble("distanceToDemandKm"),
-                            demandZoneName = o.optString("demandZoneName").takeIf { it.isNotBlank() },
+                            demandZoneName = nullableString(o, "demandZoneName"),
                             smartScore = o.optInt("smartScore", 0),
                             recommendation = runCatching { RideRecommendation.valueOf(o.optString("recommendation", RideRecommendation.CAUTION.name)) }.getOrDefault(RideRecommendation.CAUTION)
                         )
@@ -117,6 +124,11 @@ object RideHistoryStore {
     fun clear(context: Context) {
         persist(context, emptyList())
         CloudApiClient.syncAsync(context)
+    }
+
+    private fun nullableString(o: JSONObject, key: String): String? {
+        if (!o.has(key) || o.isNull(key)) return null
+        return o.optString(key).trim().takeIf { it.isNotBlank() && !it.equals("null", true) }
     }
 
     private fun persist(context: Context, entries: List<Entry>) {

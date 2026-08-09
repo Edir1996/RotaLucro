@@ -1,8 +1,8 @@
-# RotaLucro Android 0.9.1 — Cloud (servidor fixo)
+# RotaLucro Android 0.9.3 — Cloud + Demanda Inteligente
 
 Aplicativo Android para análise de ofertas da 99 com OCR local, regras por horário, demanda inteligente, retorno vazio, histórico e integração com o painel PHP/MySQL RotaLucro Cloud.
 
-## Novidades da 0.9.1
+## Novidades da 0.9.3
 
 - Login obrigatório usando a mesma conta criada pelo administrador do painel web.
 - Servidor Cloud embutido no APK; o motorista vê apenas os campos **Usuário** e **Senha**.
@@ -39,7 +39,7 @@ O OCR continua sendo processado localmente. O app não envia screenshots. A nuve
 
 O workflow `.github/workflows/android-build.yml` executa os testes e gera o artefato:
 
-`RotaLucro-v0.9.1-FixedServer-debug-apk`
+`RotaLucro-v0.9.3-DemandLearning-debug-apk`
 
 ## Requisitos
 

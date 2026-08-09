@@ -66,7 +66,7 @@ object CloudApiClient {
                 put("password", password)
                 put("device_id", deviceId)
                 put("device_name", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
-                put("app_version", "0.9.1")
+                put("app_version", "0.9.3")
             }
             val json = requestJson("$baseUrl/api/v1/login.php", "POST", null, body)
             if (!json.optBoolean("ok", false)) {
@@ -111,7 +111,7 @@ object CloudApiClient {
         return JSONObject().apply {
             put("device_id", session.deviceId)
             put("device_name", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
-            put("app_version", "0.9.1")
+            put("app_version", "0.9.3")
             put("replace", true)
             put("rides", JSONArray().apply {
                 RideHistoryStore.load(context).forEach { e ->
@@ -144,8 +144,10 @@ object CloudApiClient {
                         put("client_key", "${"%.5f".format(java.util.Locale.US, h.lat)}_${"%.5f".format(java.util.Locale.US, h.lon)}")
                         put("lat", h.lat)
                         put("lon", h.lon)
+                        put("visits", h.visits)
                         put("successes", h.successes)
                         put("confidence", h.confidence)
+                        put("label", h.label ?: JSONObject.NULL)
                         put("last_seen_at", h.lastSeenAt)
                     })
                 }
@@ -195,7 +197,7 @@ object CloudApiClient {
             connection.readTimeout = 18_000
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            connection.setRequestProperty("User-Agent", "RotaLucro-Android/0.9.0")
+            connection.setRequestProperty("User-Agent", "RotaLucro-Android/0.9.3")
             if (!token.isNullOrBlank()) {
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("X-Api-Token", token)

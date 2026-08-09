@@ -96,6 +96,7 @@ fun RotaLucroApp(
     }
 
     LaunchedEffect(Unit) {
+        DemandLearningStore.importExistingHistory(context, RideHistoryStore.load(context))
         while (true) {
             diagnostics = OcrDiagnosticsStore.load(context)
             history = RideHistoryStore.load(context)
@@ -713,14 +714,38 @@ private fun DemandScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Aprender com seu uso", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("Quando uma nova oferta chega pouco depois do fim estimado de uma corrida salva, a área ganha confiança de demanda.", color = MutedText, fontSize = 12.sp)
+                    Text("Ao salvar uma corrida aceita, o destino aparece imediatamente como área em aprendizado. Se uma nova oferta chegar perto do fim estimado da corrida, a região recebe uma confirmação real de demanda.", color = MutedText, fontSize = 12.sp)
                 }
                 Switch(settings.demandLearningEnabled, { onSettingsChanged(settings.copy(demandLearningEnabled = it)) })
             }
-            Spacer(Modifier.height(8.dp))
-            Text("Áreas aprendidas: ${learnedHotspots.size}", fontWeight = FontWeight.SemiBold)
-            if (learnedHotspots.isNotEmpty()) {
-                Text("Maior confiança: ${learnedHotspots.maxOf { it.confidence }}%", color = BrandGreen, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            val confirmedCount = learnedHotspots.count { it.confirmed }
+            val learningCount = learnedHotspots.size - confirmedCount
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricBox("Em aprendizado", learningCount.toString(), Color(0xFFFFF7ED), Color(0xFFC2410C), Modifier.weight(1f))
+                MetricBox("Confirmadas", confirmedCount.toString(), Color(0xFFF0FDF4), BrandGreen, Modifier.weight(1f))
+            }
+            if (learnedHotspots.isEmpty()) {
+                Text("Nenhuma área observada ainda. Salve uma corrida aceita com destino reconhecido para começar o aprendizado.", color = MutedText, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            } else {
+                Spacer(Modifier.height(10.dp))
+                learnedHotspots.take(6).forEach { hotspot ->
+                    val status = if (hotspot.confirmed) "Demanda confirmada" else "Em aprendizado"
+                    val statusColor = if (hotspot.confirmed) BrandGreen else Color(0xFFEA580C)
+                    Surface(
+                        color = Color(0xFFF8FAFC),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 7.dp)
+                    ) {
+                        Column(Modifier.padding(11.dp)) {
+                            Text(hotspot.label?.take(54) ?: "Área observada", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(status, color = statusColor, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                            Text("${hotspot.visits} destino(s) salvo(s) • ${hotspot.successes} confirmação(ões) • confiança ${hotspot.confidence}%", color = MutedText, fontSize = 11.sp)
+                            Text("${one(hotspot.lat)}, ${one(hotspot.lon)}", color = MutedText, fontSize = 10.sp)
+                        }
+                    }
+                }
+                if (learnedHotspots.size > 6) Text("+ ${learnedHotspots.size - 6} área(s) no histórico de aprendizado", color = MutedText, fontSize = 11.sp)
                 TextButton(onClick = onClearLearning, contentPadding = PaddingValues(0.dp)) { Text("Limpar aprendizado") }
             }
         }
