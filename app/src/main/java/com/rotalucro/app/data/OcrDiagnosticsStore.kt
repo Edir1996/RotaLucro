@@ -65,6 +65,13 @@ object OcrDiagnosticsStore {
             .apply()
     }
 
+    fun recordStatus(context: Context, reason: String) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString("reason", reason)
+            .putLong("lastReadAt", System.currentTimeMillis())
+            .apply()
+    }
+
     fun load(context: Context): OcrDiagnostics {
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         fun floatOrNull(key: String): Double? = p.getFloat(key, -1f).takeIf { it >= 0f }?.toDouble()

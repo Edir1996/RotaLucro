@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">RotaLucro</string>
-    <string name="accessibility_service_label">RotaLucro • detector da 99 e bolha</string>
-    <string name="accessibility_description">Identifica quando a 99 está em primeiro plano e exibe a bolha e o box de resultado. O conteúdo da corrida é lido por OCR local da captura de tela; o serviço não clica, aceita ou recusa corridas.</string>
+    <string name="accessibility_service_label">RotaLucro • leitor visual da 99</string>
+    <string name="accessibility_description">Detecta quando a 99 entra em primeiro plano, tira imagens pontuais da tela pela Acessibilidade e usa OCR local para calcular a oferta. Não grava a tela, não salva as imagens e não clica, aceita ou recusa corridas.</string>
 </resources>

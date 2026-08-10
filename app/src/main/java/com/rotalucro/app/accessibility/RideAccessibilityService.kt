@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -29,6 +30,7 @@ import com.rotalucro.app.calculator.OfferRating
 import com.rotalucro.app.calculator.RideRecommendation
 import com.rotalucro.app.data.RideHistoryStore
 import com.rotalucro.app.data.SettingsStore
+import com.rotalucro.app.ocr.AccessibilityOcrEngine
 import com.rotalucro.app.ocr.OcrCaptureService
 import com.rotalucro.app.ocr.RideOverlayBus
 import com.rotalucro.app.runtime.RuntimeState
@@ -43,6 +45,8 @@ class RideAccessibilityService : AccessibilityService() {
     private var menu: View? = null
     private var resultBox: View? = null
     private var resultHideRunnable: Runnable? = null
+    private lateinit var visualReader: AccessibilityOcrEngine
+    private var lastForegroundPackage: String = ""
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -51,6 +55,13 @@ class RideAccessibilityService : AccessibilityService() {
                 OcrCaptureService.ACTION_STATUS_CHANGED -> updateBubbleStatus()
                 ACTION_SHOW_BUBBLE -> showBubble()
                 ACTION_HIDE_BUBBLE -> hideBubble()
+                ACTION_SET_READER_ENABLED -> {
+                    val enabled = intent.getBooleanExtra(EXTRA_READER_ENABLED, true)
+                    getSharedPreferences(READER_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_READER_ENABLED, enabled).apply()
+                    if (::visualReader.isInitialized) visualReader.setEnabled(enabled)
+                    updateBubbleStatus()
+                }
+                ACTION_SCAN_NOW -> if (::visualReader.isInitialized) visualReader.scanNow()
             }
         }
     }
@@ -60,16 +71,25 @@ class RideAccessibilityService : AccessibilityService() {
         RuntimeState.accessibilityConnected = true
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         registerInternalReceiver()
+        visualReader = AccessibilityOcrEngine(this)
+        val readerEnabled = getSharedPreferences(READER_PREFS, MODE_PRIVATE).getBoolean(KEY_READER_ENABLED, true)
+        visualReader.start(readerEnabled)
         if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_BUBBLE_VISIBLE, true)) showBubble()
         mainHandler.post(statusTicker)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString().orEmpty()
-        // Não derruba o estado da 99 por causa de eventos do SystemUI, teclado ou overlays.
         if (pkg == PACKAGE_99) {
-            RuntimeState.currentPackage = pkg
-            RuntimeState.is99Visible = true
+            // Quando o motorista está no Maps e uma oferta faz a 99 voltar para frente,
+            // este evento arma imediatamente uma rajada de leituras.
+            updateForegroundPackage(PACKAGE_99)
+            mainHandler.postDelayed({ refreshForegroundFromRoot() }, 180L)
+        } else if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            // Não usamos diretamente eventos do SystemUI/teclado para desligar a 99.
+            // Confirmamos pelo root ativo logo depois, evitando falsos negativos.
+            mainHandler.postDelayed({ refreshForegroundFromRoot() }, 120L)
         }
     }
 
@@ -79,6 +99,7 @@ class RideAccessibilityService : AccessibilityService() {
         RuntimeState.accessibilityConnected = false
         RuntimeState.is99Visible = false
         mainHandler.removeCallbacksAndMessages(null)
+        if (::visualReader.isInitialized) visualReader.destroy()
         try { unregisterReceiver(receiver) } catch (_: Throwable) {}
         removeView(bubble); removeView(menu); removeView(resultBox)
         bubble = null; menu = null; resultBox = null
@@ -91,6 +112,8 @@ class RideAccessibilityService : AccessibilityService() {
             addAction(OcrCaptureService.ACTION_STATUS_CHANGED)
             addAction(ACTION_SHOW_BUBBLE)
             addAction(ACTION_HIDE_BUBBLE)
+            addAction(ACTION_SET_READER_ENABLED)
+            addAction(ACTION_SCAN_NOW)
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") registerReceiver(receiver, filter)
@@ -98,14 +121,26 @@ class RideAccessibilityService : AccessibilityService() {
 
     private val statusTicker = object : Runnable {
         override fun run() {
-            // rootInActiveWindow é mais estável que qualquer evento isolado para saber o app à frente.
-            val pkg = runCatching { rootInActiveWindow?.packageName?.toString().orEmpty() }.getOrDefault("")
-            if (pkg.isNotBlank()) {
-                RuntimeState.currentPackage = pkg
-                RuntimeState.is99Visible = pkg == PACKAGE_99
-            }
+            // Continua rodando enquanto o RotaLucro está minimizado. Se o usuário estiver no Maps,
+            // o leitor fica armado sem gastar OCR. Assim que a 99 voltar para frente, a leitura reinicia.
+            refreshForegroundFromRoot()
             updateBubbleStatus()
-            mainHandler.postDelayed(this, 900L)
+            mainHandler.postDelayed(this, 520L)
+        }
+    }
+
+    private fun refreshForegroundFromRoot() {
+        val pkg = runCatching { rootInActiveWindow?.packageName?.toString().orEmpty() }.getOrDefault("")
+        if (pkg.isNotBlank()) updateForegroundPackage(pkg)
+    }
+
+    private fun updateForegroundPackage(pkg: String) {
+        val was99 = lastForegroundPackage == PACKAGE_99
+        RuntimeState.currentPackage = pkg
+        RuntimeState.is99Visible = pkg == PACKAGE_99
+        lastForegroundPackage = pkg
+        if (!was99 && pkg == PACKAGE_99 && ::visualReader.isInitialized) {
+            visualReader.on99BecameVisible()
         }
     }
 
@@ -197,7 +232,7 @@ class RideAccessibilityService : AccessibilityService() {
             scaleType = ImageView.ScaleType.FIT_CENTER
         }, LinearLayout.LayoutParams(dp(30), dp(30)))
         header.addView(TextView(this).apply {
-            text = if (RuntimeState.captureActive) "RotaLucro • OCR ativo" else "RotaLucro • OCR pausado"
+            text = if (RuntimeState.captureActive) "RotaLucro • leitor ativo" else "RotaLucro • leitor pausado"
             setTextColor(Color.parseColor(if (RuntimeState.captureActive) "#15803D" else "#475569"))
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
@@ -216,11 +251,15 @@ class RideAccessibilityService : AccessibilityService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        addTopMenuButton(row, if (RuntimeState.captureActive) "Pausar OCR" else "Ativar OCR") {
-            if (RuntimeState.captureActive) OcrCaptureService.stop(this) else openApp(true)
+        addTopMenuButton(row, if (RuntimeState.captureActive) "Pausar leitor" else "Ativar leitor") {
+            if (::visualReader.isInitialized) {
+                val enabled = !RuntimeState.captureActive
+                getSharedPreferences(READER_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_READER_ENABLED, enabled).apply()
+                visualReader.setEnabled(enabled)
+            }
             updateBubbleStatus(); hideMenu()
         }
-        addTopMenuButton(row, "Ler agora") { OcrCaptureService.scanNow(this); hideMenu() }
+        addTopMenuButton(row, "Ler agora") { if (::visualReader.isInitialized) visualReader.scanNow(); hideMenu() }
         addTopMenuButton(row, "Salvar aceita") {
             val saved = RideHistoryStore.saveLatestAsAccepted(this)
             Toast.makeText(this, if (saved != null) "Corrida salva e sincronizando" else "Nenhuma oferta recente", Toast.LENGTH_SHORT).show()
@@ -275,6 +314,7 @@ class RideAccessibilityService : AccessibilityService() {
 
     private fun updateBubbleStatus() {
         val color = when {
+            RuntimeState.ocrProcessing -> "#F59E0B"
             RuntimeState.captureActive && RuntimeState.is99Visible -> "#22C55E"
             RuntimeState.captureActive -> "#38BDF8"
             else -> "#64748B"
@@ -387,6 +427,36 @@ class RideAccessibilityService : AccessibilityService() {
         resultHideRunnable = runnable; mainHandler.postDelayed(runnable, seconds * 1000L)
     }
 
+    /** Retorna a janela da 99 para takeScreenshotOfWindow() no Android 14+. */
+    fun find99WindowId(): Int? {
+        if (Build.VERSION.SDK_INT < 34) return null
+        return runCatching {
+            windows.firstOrNull { window ->
+                runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+            }?.id
+        }.getOrNull()
+    }
+
+    /** Áreas dos nossos overlays, mascaradas antes do OCR no fallback de screenshot do display. */
+    fun overlayRectsForOcr(): List<Rect> {
+        val result = mutableListOf<Rect>()
+        listOf(bubble, menu, resultBox).forEach { view ->
+            if (view != null && view.isShown) {
+                val loc = IntArray(2)
+                runCatching {
+                    view.getLocationOnScreen(loc)
+                    result += Rect(loc[0], loc[1], loc[0] + view.width, loc[1] + view.height)
+                }
+            }
+        }
+        return result
+    }
+
+    fun sendReaderStatusBroadcast() {
+        sendBroadcast(Intent(OcrCaptureService.ACTION_STATUS_CHANGED).setPackage(packageName))
+        mainHandler.post { updateBubbleStatus() }
+    }
+
     private fun openApp(requestCapture: Boolean) {
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra(MainActivity.EXTRA_REQUEST_CAPTURE, requestCapture))
     }
@@ -413,7 +483,12 @@ class RideAccessibilityService : AccessibilityService() {
         const val PACKAGE_99 = "com.app99.driver"
         const val ACTION_SHOW_BUBBLE = "com.rotalucro.app.action.SHOW_BUBBLE"
         const val ACTION_HIDE_BUBBLE = "com.rotalucro.app.action.HIDE_BUBBLE"
+        const val ACTION_SET_READER_ENABLED = "com.rotalucro.app.action.SET_READER_ENABLED"
+        const val ACTION_SCAN_NOW = "com.rotalucro.app.action.SCAN_NOW_A11Y"
+        const val EXTRA_READER_ENABLED = "reader_enabled"
         private const val PREFS = "bubble_settings"
+        private const val READER_PREFS = "visual_reader_settings"
+        private const val KEY_READER_ENABLED = "enabled"
         private const val KEY_BUBBLE_VISIBLE = "visible"
         private const val KEY_BUBBLE_X = "x"
         private const val KEY_BUBBLE_Y = "y"

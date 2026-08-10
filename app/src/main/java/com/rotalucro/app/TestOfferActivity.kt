@@ -63,7 +63,7 @@ private fun SimulatorScreen(onClose: () -> Unit) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Laboratório OCR", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Text("Oferta simulada para testar captura + OCR", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text("Oferta simulada para testar screenshot da Acessibilidade + OCR", color = Color(0xFF94A3B8), fontSize = 13.sp)
                     }
                     TextButton(onClick = onClose) { Text("Fechar", color = Color.White) }
                 }
@@ -122,7 +122,7 @@ private fun SimulatorScreen(onClose: () -> Unit) {
                 }
                 Spacer(Modifier.height(18.dp))
                 Text(
-                    "Com o OCR ativo, o RotaLucro deve reconhecer esta tela e exibir o box sem abrir a 99.",
+                    "Com o leitor ativo, o RotaLucro deve reconhecer esta tela por screenshot pontual e exibir o box sem abrir a 99.",
                     color = Color(0xFFCBD5E1), fontSize = 13.sp
                 )
                 Spacer(Modifier.weight(1f))

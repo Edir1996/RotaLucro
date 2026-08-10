@@ -1,33 +1,20 @@
 # Changelog
 
-## 0.9.3 — Aprendizado de demanda corrigido
+## 0.10.0
 
-- Ao salvar uma corrida aceita, o destino vira imediatamente uma área **Em aprendizado**.
-- Uma área só influencia o score depois de receber confirmação por nova oferta próxima ao fim estimado da corrida.
-- Corrigido o aprendizado que armazenava apenas uma corrida pendente e sobrescrevia a anterior.
-- Corrigido `null` aparecendo como nome de demanda no histórico/cloud.
-- Lista visual de áreas observadas, confirmações e confiança na aba Demanda.
+- Remove MediaProjection e a permissão de gravação/transmissão de tela.
+- OCR passa a usar screenshots pontuais do AccessibilityService.
+- `android:canTakeScreenshot="true"` habilitado na configuração do serviço.
+- Android 14+ usa `takeScreenshotOfWindow()` quando a janela da 99 pode ser localizada.
+- Android 11–13 usa screenshot do display e mascara os overlays do próprio RotaLucro antes do OCR.
+- Leitor permanece armado quando o RotaLucro e a 99 estão minimizados.
+- Quando o motorista está no Maps e a 99 volta para frente com nova oferta, uma rajada controlada de leituras é disparada automaticamente.
+- Loop de watchdog evita que uma leitura travada bloqueie as ofertas seguintes.
+- OCR só roda continuamente quando a 99 ou o laboratório está visível, reduzindo bateria e falsos positivos.
+- Bolha: azul = leitor armado, verde = 99 detectada, amarelo = OCR processando, cinza = pausado.
+- Menu flutuante continua horizontal no topo.
+- Mantidos login Cloud, histórico, demanda inteligente, aprendizado, box configurável e servidor temporário fixo.
 
-## 0.9.2
-- Corrige a compilação do menu flutuante horizontal no `RideAccessibilityService`.
-- Substitui o `HorizontalScrollView.LayoutParams` inválido por `FrameLayout.LayoutParams`.
-- Mantém o servidor temporário fixo e o login somente com usuário e senha.
+## 0.9.3
 
-## 0.9.1 — Servidor fixo
-- URL temporária do RotaLucro Cloud embutida no APK.
-- Tela de login mostra somente usuário e senha.
-- Endereço do servidor não aparece em Ajustes.
-- Migração automática de sessões antigas para o servidor configurado no APK.
-
-## 0.9.0 — Cloud
-- Login compartilhado com o painel PHP/MySQL.
-- Token por dispositivo e sincronização segura via HTTPS.
-- Corridas aceitas, hotspots, zonas e configurações sincronizados.
-- Menu da bolha redesenhado como barra horizontal no topo da tela.
-- Ações rápidas no menu flutuante.
-- Conta e sincronização manual em Ajustes.
-- Mantidos OCR contínuo, box personalizável, histórico, regras por horário e demanda inteligente.
-
-## 0.8.0 — Smart Demand
-- Demanda inteligente por regiões e áreas aprendidas.
-- Score de corrida e retorno estimado.
+- Aprendizado de demanda corrigido: destinos aceitos aparecem em aprendizado e confirmações posteriores aumentam a confiança.

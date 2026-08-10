@@ -1,50 +1,51 @@
-# RotaLucro Android 0.9.3 — Cloud + Demanda Inteligente
+# RotaLucro 0.10.0 — Leitor visual por Acessibilidade
 
-Aplicativo Android para análise de ofertas da 99 com OCR local, regras por horário, demanda inteligente, retorno vazio, histórico e integração com o painel PHP/MySQL RotaLucro Cloud.
+Aplicativo Android para analisar ofertas da 99, calcular rentabilidade e sincronizar corridas/regiões com o RotaLucro Cloud.
 
-## Novidades da 0.9.3
+## Mudança principal da v0.10.0
 
-- Login obrigatório usando a mesma conta criada pelo administrador do painel web.
-- Servidor Cloud embutido no APK; o motorista vê apenas os campos **Usuário** e **Senha**.
-- URL temporária configurada em `cloud/ServerConfig.kt`.
-- Sincronização de corridas aceitas, hotspots aprendidos, regiões de demanda e configurações.
-- Cada instalação possui um `device_id` próprio.
-- A bolha flutuante continua com a logomarca RotaLucro.
-- Ao tocar na bolha, o menu agora abre **no topo da tela, horizontalmente**.
-- Ações rápidas: ativar/pausar OCR, ler agora, salvar corrida aceita, abrir app e ocultar bolha.
-- A tela **Ajustes** mostra a conta conectada e permite sincronizar ou sair.
+O MediaProjection foi removido. O RotaLucro não solicita mais autorização de gravação/transmissão da tela.
 
-## Primeiro uso
+O leitor agora funciona dentro do `AccessibilityService`:
 
-1. Instale o painel web no servidor configurado no APK e crie o usuário no administrador.
-2. Abra o app.
-3. Informe somente o **usuário** e a **senha** criados no painel.
-4. Ative a Acessibilidade.
-5. Autorize a captura de tela para o OCR.
-6. Use a bolha flutuante enquanto estiver na 99.
+1. fica armado mesmo com o RotaLucro minimizado;
+2. detecta o aplicativo em primeiro plano;
+3. enquanto o motorista usa Maps, não roda OCR desnecessariamente;
+4. quando a 99 volta para frente com uma oferta, solicita screenshots pontuais com `AccessibilityService.takeScreenshot()`;
+5. no Android 14+, prefere `takeScreenshotOfWindow()` para capturar diretamente a janela da 99 sem os overlays do RotaLucro;
+6. executa o ML Kit Text Recognition localmente;
+7. descarta a imagem após o OCR;
+8. calcula R$/km, R$/hora, lucro, retorno provável, demanda e score;
+9. exibe o box configurável.
 
-## Alterar o servidor no futuro
+## Requisitos do leitor automático
 
-Edite somente:
+- Android 11 (API 30) ou superior para screenshot por Acessibilidade.
+- Serviço de Acessibilidade do RotaLucro ativado.
+- A 99 precisa estar visível para seus dados poderem ser lidos visualmente. Se o motorista estiver no Maps e a 99 abrir automaticamente quando chegar uma oferta, o RotaLucro detecta essa troca e inicia a leitura.
 
-`app/src/main/java/com/rotalucro/app/cloud/ServerConfig.kt`
+## Privacidade
 
-e troque `BASE_URL`. O endereço não é exibido ao motorista.
+- screenshots não são salvos;
+- imagens não são enviadas ao painel;
+- OCR é local;
+- o serviço não aceita, recusa ou toca em corridas;
+- somente dados estruturados e itens escolhidos pelo usuário são sincronizados com o servidor.
 
-## O que vai para o servidor
+## Cloud
 
-O OCR continua sendo processado localmente. O app não envia screenshots. A nuvem recebe somente dados estruturados necessários aos relatórios e ao mapa: corridas salvas, coordenadas de destino quando disponíveis, hotspots, zonas e configurações.
+Servidor temporário fixo no APK:
 
-## Build pelo GitHub Actions
+`https://greenyellow-hippopotamus-200993.hostingersite.com`
 
-O workflow `.github/workflows/android-build.yml` executa os testes e gera o artefato:
+O usuário informa somente usuário e senha.
 
-`RotaLucro-v0.9.3-DemandLearning-debug-apk`
+## Build
 
-## Requisitos
+O GitHub Actions executa testes e gera o artefato:
 
-- Android 8.0+ (API 26)
-- Acessibilidade RotaLucro ativada
-- Autorização de captura MediaProjection
-- Internet para login/sincronização
-- Painel RotaLucro Cloud acessível por HTTPS
+`RotaLucro-v0.10.0-A11yScreenshot-debug-apk`
+
+## Após instalar esta atualização
+
+Como a capacidade `canTakeScreenshot` pertence à configuração estática do serviço de Acessibilidade, desligue e ligue novamente o RotaLucro em **Configurações > Acessibilidade** uma vez após instalar a v0.10.0.

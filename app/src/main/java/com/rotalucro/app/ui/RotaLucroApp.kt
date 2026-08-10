@@ -327,7 +327,7 @@ private fun Header(diagnostics: OcrDiagnostics) {
                 Text("Copiloto de rentabilidade", color = Color(0xFFBFDBFE), fontSize = 12.sp)
             }
             StatusPill(
-                text = if (diagnostics.captureActive) "OCR ATIVO" else "OCR OFF",
+                text = if (diagnostics.captureActive) "LEITOR ATIVO" else "LEITOR OFF",
                 color = if (diagnostics.captureActive) Color(0xFF22C55E) else Color(0xFF64748B)
             )
         }
@@ -358,9 +358,9 @@ private fun HomeScreen(
                     Text(
                         when {
                             !diagnostics.accessibilityConnected -> "Ative a acessibilidade para detectar a 99 e usar a bolha."
-                            !diagnostics.captureActive -> "Leitor pronto. Falta autorizar a captura OCR."
-                            diagnostics.appDetected == "99" -> "99 detectada. OCR analisando ofertas."
-                            else -> "Tudo pronto. Aguardando uma oferta da 99."
+                            !diagnostics.captureActive -> "Leitor visual pausado. Ative para analisar ofertas automaticamente."
+                            diagnostics.appDetected == "99" -> "99 detectada. Leitor visual analisando a oferta."
+                            else -> "Leitor armado em segundo plano. Pode usar o Maps; quando a 99 vier para frente com uma oferta, a leitura começa automaticamente."
                         },
                         color = MutedText,
                         fontSize = 13.sp
@@ -377,7 +377,7 @@ private fun HomeScreen(
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MiniStatus("Acessibilidade", diagnostics.accessibilityConnected)
-                MiniStatus("Captura", diagnostics.captureActive)
+                MiniStatus("Leitor visual", diagnostics.captureActive)
                 MiniStatus("99", diagnostics.appDetected == "99")
             }
             Spacer(Modifier.height(14.dp))
@@ -389,7 +389,7 @@ private fun HomeScreen(
             ) {
                 Icon(if (diagnostics.captureActive) Icons.Rounded.StopCircle else Icons.Rounded.PlayArrow, null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (diagnostics.captureActive) "Desativar OCR" else "Ativar OCR", fontWeight = FontWeight.Bold)
+                Text(if (diagnostics.captureActive) "Desativar leitor" else "Ativar leitor", fontWeight = FontWeight.Bold)
             }
             if (!diagnostics.accessibilityConnected) {
                 TextButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) {
@@ -439,12 +439,12 @@ private fun HomeScreen(
 
         CardBlock {
             Text("Teste sem usar a 99", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Abra uma oferta simulada. O OCR captura a tela, reconhece valor/km/min e mostra o box flutuante.", color = MutedText, fontSize = 13.sp)
+            Text("Abra uma oferta simulada. O leitor tira uma imagem pontual via Acessibilidade, reconhece valor/km/min localmente e mostra o box.", color = MutedText, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = onOpenSimulator, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                 Icon(Icons.Rounded.Science, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Abrir laboratório OCR")
+                Text("Abrir laboratório do leitor")
             }
         }
 
@@ -532,11 +532,11 @@ private fun ReaderScreen(
     onOpenSimulator: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SectionTitle("Diagnóstico do leitor", "Veja exatamente onde a leitura está funcionando ou falhando.")
+        SectionTitle("Diagnóstico do leitor", "O leitor continua armado com o app minimizado e reage quando a 99 volta para frente.")
         CardBlock {
             DiagnosticLine("Leitor conectado", diagnostics.accessibilityConnected)
-            DiagnosticLine("Captura de tela", diagnostics.captureActive)
-            DiagnosticLine("OCR processando", diagnostics.ocrRunning, neutralWhenFalse = true)
+            DiagnosticLine("Screenshot via Acessibilidade", diagnostics.captureActive)
+            DiagnosticLine("OCR local processando", diagnostics.ocrRunning, neutralWhenFalse = true)
             DiagnosticLine("App detectado: ${diagnostics.appDetected}", diagnostics.appDetected == "99" || diagnostics.appDetected == "Simulador", neutralWhenFalse = true)
             Divider(Modifier.padding(vertical = 10.dp))
             Text("Linhas encontradas: ${diagnostics.recognizedLineCount}", fontWeight = FontWeight.SemiBold)
@@ -570,7 +570,7 @@ private fun ReaderScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = if (diagnostics.captureActive) onStopCapture else onRequestCapture, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) {
-                Text(if (diagnostics.captureActive) "Parar OCR" else "Ativar OCR")
+                Text(if (diagnostics.captureActive) "Pausar leitor" else "Ativar leitor")
             }
             OutlinedButton(onClick = onScanNow, enabled = diagnostics.captureActive, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) {
                 Text("Ler agora")
@@ -629,7 +629,7 @@ private fun SettingsScreen(
         CardBlock {
             Text("Permissões e bolha", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             Spacer(Modifier.height(8.dp))
-            Text("A acessibilidade só identifica qual app está em primeiro plano e desenha a bolha/box. Os valores da corrida são lidos pelo OCR local.", color = MutedText, fontSize = 12.sp)
+            Text("A Acessibilidade mantém o leitor ativo em segundo plano, detecta quando a 99 vem para frente e tira screenshots pontuais para o OCR local. Não existe sessão de gravação de tela.", color = MutedText, fontSize = 12.sp)
             Spacer(Modifier.height(10.dp))
             OutlinedButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) { Text("Abrir Acessibilidade") }
             Spacer(Modifier.height(8.dp))
@@ -661,7 +661,7 @@ private fun SettingsScreen(
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
             Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar ajustes", fontWeight = FontWeight.Bold)
         }
-        Text("Privacidade: o app não salva capturas de tela. O OCR é processado localmente. Depois do login, somente os dados estruturados das corridas salvas, regiões e áreas aprendidas são sincronizados com o seu painel; as imagens da tela não são enviadas.", color = MutedText, fontSize = 11.sp)
+        Text("Privacidade: o app não grava nem salva a tela. Cada screenshot pontual é processado localmente pelo OCR e descartado. Depois do login, somente dados estruturados das corridas salvas, regiões e áreas aprendidas são sincronizados; imagens não são enviadas.", color = MutedText, fontSize = 11.sp)
         Spacer(Modifier.height(8.dp))
     }
 }
