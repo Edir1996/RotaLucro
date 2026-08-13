@@ -1,13 +1,12 @@
-RotaLucro v0.11.0 — BR99 Reader
+RotaLucro v0.11.2 — BR99 Reader Background Trigger
 
-Validações realizadas neste ambiente:
-- XML de recursos/Manifest: estrutura validada.
-- Parser OcrOfferParser: compilado isoladamente com kotlinc e testado com a oferta real de exemplo
-  R$ 8,40 / 6min (2km) / 5min (2,3km).
-- Projeto preserva o servidor Cloud fixo.
-- Manifest não contém serviço/permissão de MediaProjection.
-- AccessibilityService declara canTakeScreenshot e leitura de janelas/view IDs.
+Validações feitas neste ambiente:
+- XML do Manifest e recursos parseados sem erro.
+- versionName/versionCode atualizados para 0.11.2 / 19.
+- Configuração do AccessibilityService inclui WindowState, WindowsChanged, WindowContent e NotificationState.
+- Filtro exclusivo de packageNames foi removido para detectar a 99 surgindo a partir de outro app.
+- Código continua ignorando conteúdo de apps diferentes da 99.
+- Servidor Cloud fixo preservado.
+- Workflow GitHub Actions atualizado para o artefato v0.11.2.
 
-Observação:
-O build Android completo depende do Android SDK/Gradle e deve ser confirmado pelo GitHub Actions
-já incluído no projeto.
+O build Android completo depende do Android SDK/Gradle e deve ser confirmado pelo GitHub Actions incluído no projeto.

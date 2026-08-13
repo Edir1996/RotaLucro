@@ -58,12 +58,32 @@ class AccessibilityOcrEngine(
     private var resolvingDemandKey = ""
     private var pendingScan = false
     private var pendingReason = "evento pendente"
-    private var eventGeneration = 0
     private var processingGeneration = 0
+    private var lastOfferRecognizedAt = 0L
+    private var suppressContentUntil = 0L
     private val demandCache = LinkedHashMap<String, DemandAssessment>()
 
-    private val contentDebounce = Runnable {
-        inspectNodesThenCapture("conteúdo da oferta mudou", forceCapture = false)
+    // Um único debounce para uma rajada inteira de WINDOW_CONTENT_CHANGED.
+    // Eventos repetidos apenas empurram esta leitura para frente em vez de criarem vários OCRs.
+    private val contentDebounce = object : Runnable {
+        override fun run() {
+            val now = System.currentTimeMillis()
+            if (now < suppressContentUntil) {
+                worker.postDelayed(this, suppressContentUntil - now + 80L)
+            } else {
+                inspectNodesThenCapture("conteúdo da oferta estabilizado", forceCapture = false)
+            }
+        }
+    }
+
+    // As duas leituras de entrada da 99 também são reutilizadas/canceláveis.
+    private val windowEntryScan = Runnable {
+        inspectNodesThenCapture("99 em primeiro plano", forceCapture = true)
+    }
+    private val windowConfirmScan = Runnable {
+        if (System.currentTimeMillis() - lastOfferRecognizedAt >= OFFER_LATCH_MS) {
+            inspectNodesThenCapture("confirmação da oferta", forceCapture = true)
+        }
     }
 
     private val heartbeat = object : Runnable {
@@ -80,10 +100,16 @@ class AccessibilityOcrEngine(
                     OcrDiagnosticsStore.recordStatus(service, "Watchdog liberou o leitor. Nova tentativa agendada.")
                 }
 
-                // Fallback de segurança: caso o Flutter não gere um evento útil, enquanto a 99
-                // estiver realmente visível fazemos uma checagem esparsa. Não é uma gravação contínua.
-                if (service.is99LikelyVisible() && now - lastCaptureAt >= HEARTBEAT_CAPTURE_GAP_MS) {
-                    inspectNodesThenCapture("verificação de segurança", forceCapture = false)
+                // Fallback de segurança bem mais esparso. O objetivo é recuperar uma oferta caso
+                // o Flutter não gere evento útil, sem manter OCR rodando sem necessidade.
+                val offerRecentlyRecognized = now - lastOfferRecognizedAt < OFFER_LATCH_MS
+                if (
+                    service.is99LikelyVisible() &&
+                    !offerRecentlyRecognized &&
+                    !processing.get() &&
+                    now - lastCaptureAt >= IDLE_PROBE_GAP_MS
+                ) {
+                    inspectNodesThenCapture("verificação ociosa de segurança", forceCapture = false)
                 }
             }
             worker.postDelayed(this, HEARTBEAT_MS)
@@ -115,22 +141,35 @@ class AccessibilityOcrEngine(
     fun on99AccessibilityEvent(eventType: Int) {
         if (!readerEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         last99SignalAt = System.currentTimeMillis()
-        eventGeneration++
-        val generation = eventGeneration
-
         when (eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
-                // A 99 pode voltar por cima do Maps antes de o cartão Flutter terminar de desenhar.
-                scheduleBurst(generation, 180L, "99 voltou para frente")
-                scheduleBurst(generation, 1_380L, "cartão da 99 estabilizando")
-                scheduleBurst(generation, 2_650L, "confirmação da oferta")
+                // Vários WINDOW_* costumam chegar quase juntos quando a 99 sobe sobre o Maps.
+                // Coalescemos tudo em apenas duas leituras canceláveis.
+                worker.removeCallbacks(windowEntryScan)
+                worker.removeCallbacks(windowConfirmScan)
+                worker.removeCallbacks(contentDebounce)
+
+                // Uma leitura rápida e outra depois que o card Flutter terminou de desenhar.
+                worker.postDelayed(windowEntryScan, WINDOW_ENTRY_DELAY_MS)
+                worker.postDelayed(windowConfirmScan, WINDOW_CONFIRM_DELAY_MS)
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                // Enquanto a oferta recém-reconhecida continua na tela, ignoramos a tempestade
+                // de atualizações do Flutter. Quando o período termina, uma única leitura é feita.
+                worker.removeCallbacks(contentDebounce)
+                val now = System.currentTimeMillis()
+                val delay = if (now < suppressContentUntil) {
+                    (suppressContentUntil - now + 80L).coerceAtLeast(CONTENT_DEBOUNCE_MS)
+                } else {
+                    CONTENT_DEBOUNCE_MS
+                }
+                worker.postDelayed(contentDebounce, delay)
+            }
+            else -> {
                 worker.removeCallbacks(contentDebounce)
                 worker.postDelayed(contentDebounce, CONTENT_DEBOUNCE_MS)
             }
-            else -> scheduleBurst(generation, 260L, "evento da 99")
         }
     }
 
@@ -139,19 +178,52 @@ class AccessibilityOcrEngine(
         on99AccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
     }
 
+    /**
+     * Disparo usado quando a janela da 99 é descoberta a partir de outro app (Maps, SystemUI,
+     * launcher etc.). A leitura continua usando exatamente o mesmo pipeline estável da 99.
+     */
+    fun on99WindowDiscovered(reason: String) {
+        if (!readerEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        RuntimeState.lastReaderSource = "Detecção fora da 99"
+        OcrDiagnosticsStore.recordStatus(service, "99 detectada fora do app • $reason")
+        on99AccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+    }
+
+    /**
+     * A notificação é somente um gatilho antecipado. Se ela trouxer valor + os dois trechos,
+     * conseguimos analisar diretamente; caso contrário o serviço espera a janela da oferta abrir.
+     */
+    fun on99BackgroundSignal(texts: List<String>) {
+        if (!readerEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        last99SignalAt = System.currentTimeMillis()
+        val cleaned = texts.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(20)
+        if (cleaned.isEmpty()) {
+            OcrDiagnosticsStore.recordStatus(service, "Sinal da 99 recebido em segundo plano. Aguardando a janela da oferta.")
+            return
+        }
+        worker.post {
+            val lines = cleaned.mapIndexed { index, text ->
+                OcrLine(text = text, top = index * 36, height = 24, left = 0, width = 0)
+            }
+            val parsed = OcrOfferParser.parse(lines)
+            if (parsed.offer != null) {
+                RuntimeState.lastReaderSource = "Notificação da 99"
+                processRecognizedOffer(
+                    parsed.copy(reason = "Oferta reconhecida a partir do sinal da 99 em segundo plano."),
+                    lines.size,
+                    demand = null,
+                    forceDisplay = false
+                )
+            } else {
+                OcrDiagnosticsStore.recordStatus(service, "Sinal da 99 recebido em segundo plano • aguardando o card completo.")
+                service.sendReaderStatusBroadcast()
+            }
+        }
+    }
+
     fun scanNow() {
         if (!readerEnabled) setEnabled(true)
         worker.post { inspectNodesThenCapture("leitura manual", forceCapture = true) }
-    }
-
-    private fun scheduleBurst(generation: Int, delayMs: Long, reason: String) {
-        worker.postDelayed({
-            if (!readerEnabled) return@postDelayed
-            // Não cancelamos os frames posteriores da mesma entrada; apenas evitamos que
-            // uma rajada muito antiga sobreviva a muitas mudanças de tela.
-            if (generation < eventGeneration - 4) return@postDelayed
-            inspectNodesThenCapture(reason, forceCapture = true)
-        }, delayMs)
     }
 
     private fun inspectNodesThenCapture(reason: String, forceCapture: Boolean) {
@@ -191,6 +263,15 @@ class AccessibilityOcrEngine(
         if (!force && !service.is99LikelyVisible()) return
 
         val now = System.currentTimeMillis()
+
+        // Depois que uma oferta já foi reconhecida, não precisamos continuar fotografando
+        // a mesma tela por causa de animações/contadores do Flutter.
+        val manual = reason.contains("manual", ignoreCase = true)
+        val windowEntry = reason.contains("primeiro plano", ignoreCase = true)
+        if (!manual && !windowEntry && now - lastOfferRecognizedAt < OFFER_LATCH_MS) {
+            return
+        }
+
         val since = now - lastCaptureAt
         if (since < MIN_CAPTURE_INTERVAL_MS) {
             pendingScan = true
@@ -413,6 +494,12 @@ class AccessibilityOcrEngine(
         misses = 0
         val signature = "${"%.2f".format(result.fare)}-${"%.2f".format(result.offer.pickupDistanceKm)}-${"%.2f".format(result.offer.tripDistanceKm)}-${result.offer.pickupMinutes}-${result.offer.tripMinutes}"
         val now = System.currentTimeMillis()
+        lastOfferRecognizedAt = now
+        suppressContentUntil = now + OFFER_LATCH_MS
+        // Se já havia uma leitura pendente causada pela mesma tempestade de eventos, descartamos.
+        pendingScan = false
+        worker.removeCallbacks(contentDebounce)
+
         var showBox = false
 
         if (forceDisplay || signature != lastSignature || now - lastSignatureAt > SAME_OFFER_REFRESH_MS) {
@@ -451,10 +538,19 @@ class AccessibilityOcrEngine(
 
     private fun drainPendingScan() {
         if (!pendingScan || processing.get() || !readerEnabled) return
-        if (!service.is99LikelyVisible() && System.currentTimeMillis() - last99SignalAt > RECENT_99_SIGNAL_MS) {
+        val now = System.currentTimeMillis()
+        if (!service.is99LikelyVisible() && now - last99SignalAt > RECENT_99_SIGNAL_MS) {
             pendingScan = false
             return
         }
+
+        // Não drena uma fila antiga imediatamente sobre uma oferta que acabou de ser reconhecida.
+        // Um novo evento real da 99 será agrupado pelo debounce e disparará a próxima leitura.
+        if (now - lastOfferRecognizedAt < OFFER_LATCH_MS) {
+            pendingScan = false
+            return
+        }
+
         val reason = pendingReason
         pendingScan = false
         requestVisualScan(reason, force = true)
@@ -470,10 +566,22 @@ class AccessibilityOcrEngine(
     }
 
     companion object {
-        private const val CONTENT_DEBOUNCE_MS = 260L
-        private const val MIN_CAPTURE_INTERVAL_MS = 1_150L
-        private const val HEARTBEAT_MS = 2_200L
-        private const val HEARTBEAT_CAPTURE_GAP_MS = 2_100L
+        // Eventos Flutter chegam em rajadas. Esperamos a interface assentar antes de ler.
+        private const val CONTENT_DEBOUNCE_MS = 650L
+        private const val WINDOW_ENTRY_DELAY_MS = 240L
+        private const val WINDOW_CONFIRM_DELAY_MS = 1_350L
+
+        // O Android também limita a frequência de screenshots de AccessibilityService.
+        private const val MIN_CAPTURE_INTERVAL_MS = 1_250L
+
+        // Depois de reconhecer uma oferta, a mesma tela fica "travada" por alguns segundos.
+        // Isso reduz OCR repetido sem impedir que uma nova oferta seja lida em seguida.
+        private const val OFFER_LATCH_MS = 3_200L
+
+        // O heartbeat agora cuida principalmente do watchdog; captura ociosa é rara.
+        private const val HEARTBEAT_MS = 2_500L
+        private const val IDLE_PROBE_GAP_MS = 8_000L
+
         private const val PROCESSING_WATCHDOG_MS = 7_500L
         private const val RETRY_AFTER_FAILURE_MS = 1_250L
         private const val RECENT_99_SIGNAL_MS = 5_000L

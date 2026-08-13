@@ -43,12 +43,18 @@ class RideAccessibilityService : AccessibilityService() {
     private var bubble: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var bubbleStatus: View? = null
+    private var lastBubbleStatusColor: String = ""
     private var menu: View? = null
     private var resultBox: View? = null
     private var resultHideRunnable: Runnable? = null
     private lateinit var visualReader: AccessibilityOcrEngine
     private var lastForegroundPackage: String = ""
+    // Apenas eventos VISUAIS da 99 entram nesta tolerância. Notificações ficam separadas
+    // para não tratarmos Maps/Launcher como se fossem a tela da oferta.
     private var last99EventAtElapsed: Long = 0L
+    private var last99NotificationAtElapsed: Long = 0L
+    private var backgroundWatchUntilElapsed: Long = 0L
+    private var lastBackgroundWindowTriggerAtElapsed: Long = 0L
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -84,24 +90,44 @@ class RideAccessibilityService : AccessibilityService() {
         if (event == null) return
         val pkg = event.packageName?.toString().orEmpty()
 
+        if (pkg == PACKAGE_99 && event.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            // Quando o motorista está no Maps/WhatsApp/etc., a primeira pista pode ser apenas
+            // uma notificação da 99. Não marcamos a 99 como "visível" ainda: armamos um watcher
+            // curto para capturar o momento em que a janela/card da oferta surgir.
+            last99NotificationAtElapsed = SystemClock.elapsedRealtime()
+            RuntimeState.last99EventAt = System.currentTimeMillis()
+            RuntimeState.readerEventCount += 1
+            RuntimeState.lastReaderSource = "Sinal da 99 em segundo plano"
+            if (::visualReader.isInitialized) {
+                visualReader.on99BackgroundSignal(event.text.map { it?.toString().orEmpty() })
+            }
+            armBackgroundOfferWatcher()
+            updateBubbleStatus()
+            return
+        }
+
         if (pkg == PACKAGE_99) {
-            // O evento da própria 99 é a fonte principal. Isso continua funcionando quando
-            // o motorista está no Maps e a 99 se abre sozinha ao chegar uma oferta.
+            // Evento visual da própria 99: atividade, janela Flutter ou conteúdo da oferta.
             last99EventAtElapsed = SystemClock.elapsedRealtime()
             RuntimeState.last99EventAt = System.currentTimeMillis()
             RuntimeState.readerEventCount += 1
             RuntimeState.lastReaderSource = "Evento da 99"
+            val wasVisible = RuntimeState.is99Visible
             updateForegroundPackage(PACKAGE_99)
             if (::visualReader.isInitialized) visualReader.on99AccessibilityEvent(event.eventType)
+            if (!wasVisible) triggerBackgroundWindowRead("janela da 99 detectada")
 
             // Depois que a janela estabilizar, confirma qual app está efetivamente na frente.
-            mainHandler.postDelayed({ refreshForegroundFromWindows() }, 420L)
+            mainHandler.postDelayed({ refreshForegroundFromWindows() }, 260L)
             return
         }
 
+        // O serviço agora também recebe eventos globais de janela. Não lemos nem armazenamos
+        // conteúdo de outros apps; eles servem apenas para perceber a transição Maps -> 99,
+        // inclusive quando o popup é anunciado pelo SystemUI em vez do pacote da 99.
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            mainHandler.postDelayed({ refreshForegroundFromWindows() }, 180L)
+            mainHandler.postDelayed({ refreshForegroundFromWindows() }, 90L)
         }
     }
 
@@ -141,9 +167,56 @@ class RideAccessibilityService : AccessibilityService() {
         }
     }
 
+    private val backgroundOfferWatcher = object : Runnable {
+        override fun run() {
+            if (!::visualReader.isInitialized) return
+            val now = SystemClock.elapsedRealtime()
+            val has99Window = hasAny99Window()
+            if (has99Window) {
+                RuntimeState.currentPackage = PACKAGE_99
+                RuntimeState.is99Visible = true
+                triggerBackgroundWindowRead("oferta da 99 abriu sobre outro app")
+                updateBubbleStatus()
+                return
+            }
+            if (now < backgroundWatchUntilElapsed) {
+                mainHandler.postDelayed(this, BACKGROUND_WATCH_STEP_MS)
+            }
+        }
+    }
+
+    private fun armBackgroundOfferWatcher() {
+        backgroundWatchUntilElapsed = SystemClock.elapsedRealtime() + BACKGROUND_WATCH_DURATION_MS
+        mainHandler.removeCallbacks(backgroundOfferWatcher)
+        mainHandler.post(backgroundOfferWatcher)
+    }
+
+    private fun triggerBackgroundWindowRead(reason: String) {
+        if (!::visualReader.isInitialized) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastBackgroundWindowTriggerAtElapsed < BACKGROUND_TRIGGER_COOLDOWN_MS) return
+        lastBackgroundWindowTriggerAtElapsed = now
+        RuntimeState.lastReaderSource = "Detecção fora da 99"
+        visualReader.on99WindowDiscovered(reason)
+    }
+
+    private fun hasAny99Window(): Boolean = runCatching {
+        windows.any { window ->
+            runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+        }
+    }.getOrDefault(false)
+
     private fun refreshForegroundFromWindows() {
         val now = SystemClock.elapsedRealtime()
         val recent99Event = now - last99EventAtElapsed <= RECENT_99_EVENT_GRACE_MS
+        val recent99Notification = now - last99NotificationAtElapsed <= BACKGROUND_WATCH_DURATION_MS + 1_500L
+
+        val allPackages = runCatching {
+            windows.asSequence()
+                .mapNotNull { window -> runCatching { window.root?.packageName?.toString() }.getOrNull() }
+                .filter { it.isNotBlank() }
+                .toList()
+        }.getOrDefault(emptyList())
 
         val activePackages = runCatching {
             windows.asSequence()
@@ -155,9 +228,22 @@ class RideAccessibilityService : AccessibilityService() {
 
         val rootPackage = runCatching { rootInActiveWindow?.packageName?.toString().orEmpty() }.getOrDefault("")
         val hasActive99Window = activePackages.contains(PACKAGE_99)
+        val hasAny99Window = allPackages.contains(PACKAGE_99)
+        val was99Visible = RuntimeState.is99Visible
 
         when {
-            hasActive99Window || rootPackage == PACKAGE_99 -> updateForegroundPackage(PACKAGE_99)
+            hasActive99Window || rootPackage == PACKAGE_99 -> {
+                updateForegroundPackage(PACKAGE_99)
+                if (!was99Visible) triggerBackgroundWindowRead("99 entrou em primeiro plano")
+            }
+            // Alguns aparelhos/versões da 99 apresentam o card em uma janela que não vira
+            // imediatamente rootInActiveWindow. Se ela apareceu logo após um sinal da 99,
+            // tratamos essa janela como oferta visível e disparamos o leitor.
+            hasAny99Window && (recent99Notification || recent99Event || now < backgroundWatchUntilElapsed) -> {
+                RuntimeState.currentPackage = PACKAGE_99
+                RuntimeState.is99Visible = true
+                if (!was99Visible) triggerBackgroundWindowRead("janela de oferta da 99 detectada em segundo plano")
+            }
             recent99Event -> {
                 RuntimeState.currentPackage = PACKAGE_99
                 RuntimeState.is99Visible = true
@@ -165,6 +251,9 @@ class RideAccessibilityService : AccessibilityService() {
             rootPackage.isNotBlank() && rootPackage != packageName -> updateForegroundPackage(rootPackage)
             activePackages.firstOrNull { it != packageName && it != "com.android.systemui" } != null -> {
                 updateForegroundPackage(activePackages.first { it != packageName && it != "com.android.systemui" })
+            }
+            !hasAny99Window -> {
+                RuntimeState.is99Visible = false
             }
         }
     }
@@ -198,6 +287,7 @@ class RideAccessibilityService : AccessibilityService() {
             rightMargin = dp(2); bottomMargin = dp(2)
         })
         bubbleStatus = dot
+        lastBubbleStatusColor = ""
 
         val metrics = resources.displayMetrics
         val defaultX = (metrics.widthPixels - size - dp(14)).coerceAtLeast(0)
@@ -341,16 +431,21 @@ class RideAccessibilityService : AccessibilityService() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_BUBBLE_VISIBLE, false).apply()
         RuntimeState.bubbleVisible = false; hideMenu(); removeView(bubble)
         bubble = null; bubbleParams = null; bubbleStatus = null
+        lastBubbleStatusColor = ""
     }
 
     private fun updateBubbleStatus() {
+        // v0.11.1: o indicador mostra apenas o estado do LEITOR, não cada ciclo interno do OCR.
+        // Assim ele não alterna verde/laranja enquanto a 99 gera vários eventos de conteúdo.
         val color = when {
-            RuntimeState.ocrProcessing -> "#F59E0B"
-            RuntimeState.captureActive && RuntimeState.is99Visible -> "#22C55E"
-            RuntimeState.captureActive -> "#38BDF8"
-            else -> "#64748B"
+            RuntimeState.captureActive && RuntimeState.is99Visible -> "#22C55E" // 99 visível + leitor ativo
+            RuntimeState.captureActive -> "#38BDF8" // leitor ativo, aguardando a 99
+            else -> "#64748B" // pausado/indisponível
         }
-        bubbleStatus?.background = circleDrawable(color)
+        if (color != lastBubbleStatusColor) {
+            bubbleStatus?.background = circleDrawable(color)
+            lastBubbleStatusColor = color
+        }
     }
 
     private fun showRideResult(intent: Intent) {
@@ -486,9 +581,17 @@ class RideAccessibilityService : AccessibilityService() {
         val now = SystemClock.elapsedRealtime()
         if (now - last99EventAtElapsed <= RECENT_99_EVENT_GRACE_MS) return true
         return runCatching {
-            windows.any { window ->
-                (window.isActive || window.isFocused) &&
-                    runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+            val any99 = windows.any { window ->
+                runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+            }
+            if (any99 && (now < backgroundWatchUntilElapsed ||
+                    now - last99NotificationAtElapsed <= BACKGROUND_WATCH_DURATION_MS + 1_500L)) {
+                true
+            } else {
+                windows.any { window ->
+                    (window.isActive || window.isFocused) &&
+                        runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+                }
             }
         }.getOrDefault(RuntimeState.is99Visible)
     }
@@ -549,5 +652,8 @@ class RideAccessibilityService : AccessibilityService() {
         private const val KEY_BUBBLE_X = "x"
         private const val KEY_BUBBLE_Y = "y"
         private const val RECENT_99_EVENT_GRACE_MS = 3_500L
+        private const val BACKGROUND_WATCH_DURATION_MS = 5_500L
+        private const val BACKGROUND_WATCH_STEP_MS = 120L
+        private const val BACKGROUND_TRIGGER_COOLDOWN_MS = 850L
     }
 }

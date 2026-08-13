@@ -1,57 +1,58 @@
-# RotaLucro v0.11.0 — BR99 Reader
+# RotaLucro v0.11.2 — BR99 Reader Background Trigger
 
 Aplicativo Android de apoio para análise das ofertas exibidas no app 99 Motorista.
 
-## O que mudou no leitor
+## Correção v0.11.2
 
-A v0.11.0 não usa MediaProjection e não mantém uma gravação de tela contínua.
+Esta versão corrige o caso em que a leitura funcionava somente quando a 99 já estava em primeiro plano.
 
-Fluxo do leitor:
+O serviço agora observa transições globais de janela apenas para detectar quando a 99 surge sobre outro app. O conteúdo de outros aplicativos não é armazenado nem processado pelo parser.
 
-1. Acessibilidade recebe um evento da `com.app99.driver`.
-2. O RotaLucro verifica a árvore da janela e os view IDs.
-3. Se os dados da oferta estiverem acessíveis, eles são interpretados diretamente.
-4. Se a interface Flutter não expuser os textos, o serviço faz uma captura pontual da janela/tela.
-5. Google ML Kit Text Recognition processa a imagem localmente.
-6. O parser valida valor + coleta + viagem.
-7. O cálculo e o box são exibidos.
+Fluxo quando o motorista está no Maps, tela inicial ou outro app:
 
-Quando o motorista estiver usando o Google Maps, o leitor permanece armado. Se a 99 voltar para a frente ao receber uma oferta, os eventos da janela disparam uma nova leitura.
+1. a 99 gera uma notificação/sinal em segundo plano;
+2. o RotaLucro arma um watcher curto de 5,5 segundos;
+3. o serviço acompanha as janelas do Android até detectar uma janela da `com.app99.driver`;
+4. quando o card/atividade da 99 surge, o leitor BR99 é disparado;
+5. primeiro tenta a árvore de Acessibilidade;
+6. se necessário, faz screenshot pontual + ML Kit OCR;
+7. o parser valida valor + coleta + viagem e mostra o box.
+
+Também existe leitura do texto da própria notificação da 99: se excepcionalmente ela contiver todos os dados necessários, a oferta pode ser analisada antes mesmo do card completo aparecer.
+
+## Bolha
+
+- Verde: leitor ativo + janela da 99 detectada.
+- Azul: leitor ativo aguardando a 99.
+- Cinza: leitor pausado/indisponível.
+
+O OCR não altera a cor da bolha, evitando piscadas.
 
 ## Permissões
 
 - Internet: login/sincronização Cloud.
-- Acessibilidade: detecção da 99, janela e overlay.
+- Acessibilidade: detectar mudanças de janela, janela da 99 e overlay.
 - `canTakeScreenshot`: captura pontual usada pelo serviço de Acessibilidade.
 
-Não existe permissão de gravação/transmissão de tela do MediaProjection.
+Não existe sessão contínua de MediaProjection.
 
-## Primeiro uso
+## Primeiro uso após atualizar
 
-1. Instale o APK.
-2. Abra o RotaLucro.
-3. Faça login com usuário e senha.
-4. Ative a Acessibilidade do RotaLucro.
-5. Se a Acessibilidade já estava ativa numa versão anterior, desative e ative novamente depois de instalar a v0.11.0.
-6. Deixe o Leitor BR99 ativado.
-7. Pode minimizar o RotaLucro e usar Maps/99 normalmente.
+1. Instale o novo APK.
+2. Vá em Configurações > Acessibilidade > RotaLucro.
+3. Desative o serviço.
+4. Ative novamente.
+5. Abra o RotaLucro e deixe o Leitor BR99 ativado.
+6. Pode voltar ao Maps ou outro app e aguardar a próxima oferta.
+
+A reativação é importante porque a v0.11.2 alterou os tipos de eventos que o serviço de Acessibilidade solicita.
 
 ## Servidor Cloud
 
-O servidor está fixo em:
-
 `https://greenyellow-hippopotamus-200993.hostingersite.com`
-
-O motorista vê somente usuário e senha.
 
 ## Build pelo GitHub Actions
 
-Após enviar os arquivos ao repositório:
-
-1. Commit to main
-2. Push origin
-3. GitHub > Actions > Android Build
-
 Artefato esperado:
 
-`RotaLucro-v0.11.0-BR99Reader-debug-apk`
+`RotaLucro-v0.11.2-BR99Reader-BackgroundTrigger-debug-apk`
