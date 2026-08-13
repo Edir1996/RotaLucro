@@ -1,0 +1,13 @@
+RotaLucro v0.11.0 — BR99 Reader
+
+Validações realizadas neste ambiente:
+- XML de recursos/Manifest: estrutura validada.
+- Parser OcrOfferParser: compilado isoladamente com kotlinc e testado com a oferta real de exemplo
+  R$ 8,40 / 6min (2km) / 5min (2,3km).
+- Projeto preserva o servidor Cloud fixo.
+- Manifest não contém serviço/permissão de MediaProjection.
+- AccessibilityService declara canTakeScreenshot e leitura de janelas/view IDs.
+
+Observação:
+O build Android completo depende do Android SDK/Gradle e deve ser confirmado pelo GitHub Actions
+já incluído no projeto.

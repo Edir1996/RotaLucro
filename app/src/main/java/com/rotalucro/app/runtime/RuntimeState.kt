@@ -8,4 +8,9 @@ object RuntimeState {
     @Volatile var captureActive: Boolean = false
     @Volatile var ocrProcessing: Boolean = false
     @Volatile var bubbleVisible: Boolean = true
+
+    // Diagnóstico do BR99 Reader.
+    @Volatile var readerEventCount: Int = 0
+    @Volatile var lastReaderSource: String = "Aguardando"
+    @Volatile var last99EventAt: Long = 0L
 }

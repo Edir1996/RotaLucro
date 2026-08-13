@@ -1,51 +1,57 @@
-# RotaLucro 0.10.0 — Leitor visual por Acessibilidade
+# RotaLucro v0.11.0 — BR99 Reader
 
-Aplicativo Android para analisar ofertas da 99, calcular rentabilidade e sincronizar corridas/regiões com o RotaLucro Cloud.
+Aplicativo Android de apoio para análise das ofertas exibidas no app 99 Motorista.
 
-## Mudança principal da v0.10.0
+## O que mudou no leitor
 
-O MediaProjection foi removido. O RotaLucro não solicita mais autorização de gravação/transmissão da tela.
+A v0.11.0 não usa MediaProjection e não mantém uma gravação de tela contínua.
 
-O leitor agora funciona dentro do `AccessibilityService`:
+Fluxo do leitor:
 
-1. fica armado mesmo com o RotaLucro minimizado;
-2. detecta o aplicativo em primeiro plano;
-3. enquanto o motorista usa Maps, não roda OCR desnecessariamente;
-4. quando a 99 volta para frente com uma oferta, solicita screenshots pontuais com `AccessibilityService.takeScreenshot()`;
-5. no Android 14+, prefere `takeScreenshotOfWindow()` para capturar diretamente a janela da 99 sem os overlays do RotaLucro;
-6. executa o ML Kit Text Recognition localmente;
-7. descarta a imagem após o OCR;
-8. calcula R$/km, R$/hora, lucro, retorno provável, demanda e score;
-9. exibe o box configurável.
+1. Acessibilidade recebe um evento da `com.app99.driver`.
+2. O RotaLucro verifica a árvore da janela e os view IDs.
+3. Se os dados da oferta estiverem acessíveis, eles são interpretados diretamente.
+4. Se a interface Flutter não expuser os textos, o serviço faz uma captura pontual da janela/tela.
+5. Google ML Kit Text Recognition processa a imagem localmente.
+6. O parser valida valor + coleta + viagem.
+7. O cálculo e o box são exibidos.
 
-## Requisitos do leitor automático
+Quando o motorista estiver usando o Google Maps, o leitor permanece armado. Se a 99 voltar para a frente ao receber uma oferta, os eventos da janela disparam uma nova leitura.
 
-- Android 11 (API 30) ou superior para screenshot por Acessibilidade.
-- Serviço de Acessibilidade do RotaLucro ativado.
-- A 99 precisa estar visível para seus dados poderem ser lidos visualmente. Se o motorista estiver no Maps e a 99 abrir automaticamente quando chegar uma oferta, o RotaLucro detecta essa troca e inicia a leitura.
+## Permissões
 
-## Privacidade
+- Internet: login/sincronização Cloud.
+- Acessibilidade: detecção da 99, janela e overlay.
+- `canTakeScreenshot`: captura pontual usada pelo serviço de Acessibilidade.
 
-- screenshots não são salvos;
-- imagens não são enviadas ao painel;
-- OCR é local;
-- o serviço não aceita, recusa ou toca em corridas;
-- somente dados estruturados e itens escolhidos pelo usuário são sincronizados com o servidor.
+Não existe permissão de gravação/transmissão de tela do MediaProjection.
 
-## Cloud
+## Primeiro uso
 
-Servidor temporário fixo no APK:
+1. Instale o APK.
+2. Abra o RotaLucro.
+3. Faça login com usuário e senha.
+4. Ative a Acessibilidade do RotaLucro.
+5. Se a Acessibilidade já estava ativa numa versão anterior, desative e ative novamente depois de instalar a v0.11.0.
+6. Deixe o Leitor BR99 ativado.
+7. Pode minimizar o RotaLucro e usar Maps/99 normalmente.
+
+## Servidor Cloud
+
+O servidor está fixo em:
 
 `https://greenyellow-hippopotamus-200993.hostingersite.com`
 
-O usuário informa somente usuário e senha.
+O motorista vê somente usuário e senha.
 
-## Build
+## Build pelo GitHub Actions
 
-O GitHub Actions executa testes e gera o artefato:
+Após enviar os arquivos ao repositório:
 
-`RotaLucro-v0.10.0-A11yScreenshot-debug-apk`
+1. Commit to main
+2. Push origin
+3. GitHub > Actions > Android Build
 
-## Após instalar esta atualização
+Artefato esperado:
 
-Como a capacidade `canTakeScreenshot` pertence à configuração estática do serviço de Acessibilidade, desligue e ligue novamente o RotaLucro em **Configurações > Acessibilidade** uma vez após instalar a v0.10.0.
+`RotaLucro-v0.11.0-BR99Reader-debug-apk`

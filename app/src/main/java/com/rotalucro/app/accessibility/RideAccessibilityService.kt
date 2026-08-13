@@ -13,6 +13,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -47,6 +48,7 @@ class RideAccessibilityService : AccessibilityService() {
     private var resultHideRunnable: Runnable? = null
     private lateinit var visualReader: AccessibilityOcrEngine
     private var lastForegroundPackage: String = ""
+    private var last99EventAtElapsed: Long = 0L
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -79,17 +81,27 @@ class RideAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val pkg = event?.packageName?.toString().orEmpty()
+        if (event == null) return
+        val pkg = event.packageName?.toString().orEmpty()
+
         if (pkg == PACKAGE_99) {
-            // Quando o motorista está no Maps e uma oferta faz a 99 voltar para frente,
-            // este evento arma imediatamente uma rajada de leituras.
+            // O evento da própria 99 é a fonte principal. Isso continua funcionando quando
+            // o motorista está no Maps e a 99 se abre sozinha ao chegar uma oferta.
+            last99EventAtElapsed = SystemClock.elapsedRealtime()
+            RuntimeState.last99EventAt = System.currentTimeMillis()
+            RuntimeState.readerEventCount += 1
+            RuntimeState.lastReaderSource = "Evento da 99"
             updateForegroundPackage(PACKAGE_99)
-            mainHandler.postDelayed({ refreshForegroundFromRoot() }, 180L)
-        } else if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            // Não usamos diretamente eventos do SystemUI/teclado para desligar a 99.
-            // Confirmamos pelo root ativo logo depois, evitando falsos negativos.
-            mainHandler.postDelayed({ refreshForegroundFromRoot() }, 120L)
+            if (::visualReader.isInitialized) visualReader.on99AccessibilityEvent(event.eventType)
+
+            // Depois que a janela estabilizar, confirma qual app está efetivamente na frente.
+            mainHandler.postDelayed({ refreshForegroundFromWindows() }, 420L)
+            return
+        }
+
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            mainHandler.postDelayed({ refreshForegroundFromWindows() }, 180L)
         }
     }
 
@@ -121,27 +133,46 @@ class RideAccessibilityService : AccessibilityService() {
 
     private val statusTicker = object : Runnable {
         override fun run() {
-            // Continua rodando enquanto o RotaLucro está minimizado. Se o usuário estiver no Maps,
-            // o leitor fica armado sem gastar OCR. Assim que a 99 voltar para frente, a leitura reinicia.
-            refreshForegroundFromRoot()
+            // Health-check leve. A leitura em si é disparada por eventos; este ticker apenas
+            // evita que um overlay próprio faça o RotaLucro "esquecer" que a 99 está visível.
+            refreshForegroundFromWindows()
             updateBubbleStatus()
-            mainHandler.postDelayed(this, 520L)
+            mainHandler.postDelayed(this, 700L)
         }
     }
 
-    private fun refreshForegroundFromRoot() {
-        val pkg = runCatching { rootInActiveWindow?.packageName?.toString().orEmpty() }.getOrDefault("")
-        if (pkg.isNotBlank()) updateForegroundPackage(pkg)
+    private fun refreshForegroundFromWindows() {
+        val now = SystemClock.elapsedRealtime()
+        val recent99Event = now - last99EventAtElapsed <= RECENT_99_EVENT_GRACE_MS
+
+        val activePackages = runCatching {
+            windows.asSequence()
+                .filter { it.isActive || it.isFocused }
+                .mapNotNull { window -> runCatching { window.root?.packageName?.toString() }.getOrNull() }
+                .filter { it.isNotBlank() }
+                .toList()
+        }.getOrDefault(emptyList())
+
+        val rootPackage = runCatching { rootInActiveWindow?.packageName?.toString().orEmpty() }.getOrDefault("")
+        val hasActive99Window = activePackages.contains(PACKAGE_99)
+
+        when {
+            hasActive99Window || rootPackage == PACKAGE_99 -> updateForegroundPackage(PACKAGE_99)
+            recent99Event -> {
+                RuntimeState.currentPackage = PACKAGE_99
+                RuntimeState.is99Visible = true
+            }
+            rootPackage.isNotBlank() && rootPackage != packageName -> updateForegroundPackage(rootPackage)
+            activePackages.firstOrNull { it != packageName && it != "com.android.systemui" } != null -> {
+                updateForegroundPackage(activePackages.first { it != packageName && it != "com.android.systemui" })
+            }
+        }
     }
 
     private fun updateForegroundPackage(pkg: String) {
-        val was99 = lastForegroundPackage == PACKAGE_99
         RuntimeState.currentPackage = pkg
         RuntimeState.is99Visible = pkg == PACKAGE_99
         lastForegroundPackage = pkg
-        if (!was99 && pkg == PACKAGE_99 && ::visualReader.isInitialized) {
-            visualReader.on99BecameVisible()
-        }
     }
 
     private fun showBubble() {
@@ -431,10 +462,35 @@ class RideAccessibilityService : AccessibilityService() {
     fun find99WindowId(): Int? {
         if (Build.VERSION.SDK_INT < 34) return null
         return runCatching {
-            windows.firstOrNull { window ->
+            val candidates = windows.filter { window ->
                 runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
-            }?.id
+            }
+            (candidates.firstOrNull { it.isActive || it.isFocused } ?: candidates.firstOrNull())?.id
         }.getOrNull()
+    }
+
+    /** Root da janela da 99, mesmo quando o root ativo momentaneamente é o nosso overlay. */
+    fun find99WindowRoot() = runCatching {
+        val candidates = windows.filter { window ->
+            runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+        }
+        (candidates.firstOrNull { it.isActive || it.isFocused } ?: candidates.firstOrNull())?.root
+    }.getOrNull()
+
+    /**
+     * Confirma se a 99 está visível sem depender apenas de rootInActiveWindow.
+     * Um pequeno período de tolerância cobre a animação da 99 entrando por cima do Maps.
+     */
+    fun is99LikelyVisible(): Boolean {
+        if (RuntimeState.simulatorVisible) return true
+        val now = SystemClock.elapsedRealtime()
+        if (now - last99EventAtElapsed <= RECENT_99_EVENT_GRACE_MS) return true
+        return runCatching {
+            windows.any { window ->
+                (window.isActive || window.isFocused) &&
+                    runCatching { window.root?.packageName?.toString() == PACKAGE_99 }.getOrDefault(false)
+            }
+        }.getOrDefault(RuntimeState.is99Visible)
     }
 
     /** Áreas dos nossos overlays, mascaradas antes do OCR no fallback de screenshot do display. */
@@ -492,5 +548,6 @@ class RideAccessibilityService : AccessibilityService() {
         private const val KEY_BUBBLE_VISIBLE = "visible"
         private const val KEY_BUBBLE_X = "x"
         private const val KEY_BUBBLE_Y = "y"
+        private const val RECENT_99_EVENT_GRACE_MS = 3_500L
     }
 }

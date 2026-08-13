@@ -31,7 +31,10 @@ data class OcrDiagnostics(
     val smartScore: Int?,
     val recommendation: String?,
     val boxDisplayed: Boolean,
-    val lastReadAt: Long
+    val lastReadAt: Long,
+    val readerEventCount: Int,
+    val readerSource: String,
+    val last99EventAt: Long
 )
 
 object OcrDiagnosticsStore {
@@ -102,7 +105,10 @@ object OcrDiagnosticsStore {
             demandClass = p.getString("demandClass", null),
             smartScore = intOrNull("smartScore"),
             recommendation = p.getString("recommendation", null),
-            boxDisplayed = p.getBoolean("box", false), lastReadAt = p.getLong("lastReadAt", 0L)
+            boxDisplayed = p.getBoolean("box", false), lastReadAt = p.getLong("lastReadAt", 0L),
+            readerEventCount = RuntimeState.readerEventCount,
+            readerSource = RuntimeState.lastReaderSource,
+            last99EventAt = RuntimeState.last99EventAt
         )
     }
 }

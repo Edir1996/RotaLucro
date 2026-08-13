@@ -358,9 +358,9 @@ private fun HomeScreen(
                     Text(
                         when {
                             !diagnostics.accessibilityConnected -> "Ative a acessibilidade para detectar a 99 e usar a bolha."
-                            !diagnostics.captureActive -> "Leitor visual pausado. Ative para analisar ofertas automaticamente."
-                            diagnostics.appDetected == "99" -> "99 detectada. Leitor visual analisando a oferta."
-                            else -> "Leitor armado em segundo plano. Pode usar o Maps; quando a 99 vier para frente com uma oferta, a leitura começa automaticamente."
+                            !diagnostics.captureActive -> "Leitor BR99 pausado. Ative para analisar ofertas automaticamente."
+                            diagnostics.appDetected == "99" -> "99 detectada. O leitor BR99 está verificando a tela e a oferta."
+                            else -> "Leitor BR99 armado. Pode usar o Maps; quando a 99 abrir com uma oferta, ele reage ao evento e faz a leitura automaticamente."
                         },
                         color = MutedText,
                         fontSize = 13.sp
@@ -377,7 +377,7 @@ private fun HomeScreen(
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MiniStatus("Acessibilidade", diagnostics.accessibilityConnected)
-                MiniStatus("Leitor visual", diagnostics.captureActive)
+                MiniStatus("Leitor BR99", diagnostics.captureActive)
                 MiniStatus("99", diagnostics.appDetected == "99")
             }
             Spacer(Modifier.height(14.dp))
@@ -532,14 +532,16 @@ private fun ReaderScreen(
     onOpenSimulator: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SectionTitle("Diagnóstico do leitor", "O leitor continua armado com o app minimizado e reage quando a 99 volta para frente.")
+        SectionTitle("Diagnóstico do leitor", "Leitura híbrida: Acessibilidade primeiro e OCR pontual como fallback. Continua armado com o RotaLucro minimizado.")
         CardBlock {
             DiagnosticLine("Leitor conectado", diagnostics.accessibilityConnected)
-            DiagnosticLine("Screenshot via Acessibilidade", diagnostics.captureActive)
+            DiagnosticLine("Captura pontual via Acessibilidade", diagnostics.captureActive)
             DiagnosticLine("OCR local processando", diagnostics.ocrRunning, neutralWhenFalse = true)
             DiagnosticLine("App detectado: ${diagnostics.appDetected}", diagnostics.appDetected == "99" || diagnostics.appDetected == "Simulador", neutralWhenFalse = true)
             Divider(Modifier.padding(vertical = 10.dp))
-            Text("Linhas encontradas: ${diagnostics.recognizedLineCount}", fontWeight = FontWeight.SemiBold)
+            Text("Eventos recebidos da 99: ${diagnostics.readerEventCount}", fontWeight = FontWeight.SemiBold)
+            Text("Fonte da última leitura: ${diagnostics.readerSource}", color = MutedText, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+            Text("Linhas encontradas: ${diagnostics.recognizedLineCount}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             Text(diagnostics.reason, color = MutedText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         }
 

@@ -18,3 +18,14 @@
 ## 0.9.3
 
 - Aprendizado de demanda corrigido: destinos aceitos aparecem em aprendizado e confirmações posteriores aumentam a confiança.
+
+## 0.11.0 — BR99 Reader
+- Leitor refeito para ser orientado a eventos da Acessibilidade, em vez de depender de uma sequência contínua de OCR.
+- A árvore de acessibilidade é verificada primeiro; OCR local é usado como fallback quando a 99/Flutter não expõe os textos.
+- Adicionadas flags de view IDs, janelas interativas e views não importantes para melhorar a detecção da tela da 99.
+- Captura pontual via AccessibilityService.takeScreenshot; Android 14+ prioriza takeScreenshotOfWindow e faz fallback para o display se a janela mudar.
+- Nova fila de leitura pendente: um evento que chega durante o OCR não é perdido.
+- Watchdog e retry automático depois de falhas da captura.
+- Detecção da 99 mais robusta quando o motorista está no Maps e a 99 abre sozinha com uma nova oferta.
+- Recorte OCR mais tolerante e linhas ordenadas geometricamente antes do parser.
+- Servidor Cloud temporário continua fixo no APK; login permanece apenas usuário + senha.
